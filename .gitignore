@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# Build artifacts
+*.pdf
+*.docx
+*.png
+
+# But track templates and precedent docs
+!templates/**/*.docx
+!projects/docx-pipeline/templates/**/*.docx
+
+# Environment
+.env
+.token_cache.bin
+
+# OS
+.DS_Store
+
+# Editor
+*.swp
+*.swo
+*~
