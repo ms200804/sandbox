@@ -8,6 +8,7 @@ The bot's Claude instance calls these via tool_use; execute_tool() dispatches.
 import json
 import subprocess
 import os
+import sys
 from pathlib import Path
 from datetime import datetime
 
@@ -15,6 +16,10 @@ from datetime import datetime
 SANDBOX_ROOT = Path(__file__).parent.parent.parent
 ADVERSARIAL_SIM_DIR = SANDBOX_ROOT / "projects" / "adversarial-sim"
 CASE_RESEARCH_DIR = SANDBOX_ROOT / "projects" / "case-research"
+
+# Add case-research to path so we can import library
+sys.path.insert(0, str(CASE_RESEARCH_DIR))
+import library as research_library
 
 # ── Tool Schemas (Claude API format) ────────────────────────────────
 
@@ -183,6 +188,70 @@ TOOL_DEFINITIONS = [
         },
     },
     {
+        "name": "library_search",
+        "description": (
+            "Search the research library for previously researched topics. "
+            "Returns cached research results if available, with staleness info. "
+            "Use this BEFORE running a new search — if we've already researched "
+            "the topic, no need to hit CourtListener again."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search term (e.g., 'tvpa', 'arbitration unconscionability', 'charging lien')",
+                },
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "library_save",
+        "description": (
+            "Save research results to the library for future use. "
+            "Auto-creates categories on the fly. Use after completing a "
+            "research query to avoid re-researching the same topic."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string",
+                    "description": "Broad area (e.g., 'tvpa', 'arbitration', 'securities', 'employment'). Creates new categories automatically.",
+                },
+                "topic": {
+                    "type": "string",
+                    "description": "Specific topic (e.g., 'private_right_of_action', 'unconscionability', 'fee_shifting')",
+                },
+                "query": {
+                    "type": "string",
+                    "description": "The original search query",
+                },
+                "jurisdiction": {
+                    "type": "string",
+                    "description": "Target jurisdiction (e.g., 'ca9', 'ca2', 'scotus')",
+                },
+                "results": {
+                    "type": "object",
+                    "description": "The structured JSON research results to save",
+                },
+            },
+            "required": ["category", "topic", "results"],
+        },
+    },
+    {
+        "name": "library_list",
+        "description": (
+            "List all categories and topics in the research library, "
+            "with staleness indicators. Use to see what's available."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
         "name": "check_task",
         "description": "Check the status of a running or completed background task.",
         "input_schema": {
@@ -276,6 +345,9 @@ def execute_tool(name: str, input_data: dict, task_mgr,
         "find_similar_cases": _find_similar_cases,
         "lookup_citation": _lookup_citation,
         "shepardize": _shepardize,
+        "library_search": _library_search,
+        "library_save": _library_save,
+        "library_list": _library_list,
         "check_task": _check_task,
         "list_tasks": _list_tasks,
         "read_file": _read_file,
@@ -430,6 +502,64 @@ def _shepardize(input_data: dict) -> str:
         "status": "not_implemented",
         "message": f"Shepardize not yet implemented. Citations: {citations}",
     })
+
+
+def _library_search(input_data: dict) -> str:
+    """Search the research library for cached results."""
+    query = input_data.get("query", "")
+    matches = research_library.search_library(query)
+    if not matches:
+        return json.dumps({
+            "found": False,
+            "message": f"No library entries match '{query}'. Run a fresh search.",
+        })
+
+    return json.dumps({
+        "found": True,
+        "matches": matches,
+        "message": f"Found {len(matches)} matching topic(s). Stale entries may need refresh.",
+    }, indent=2)
+
+
+def _library_save(input_data: dict) -> str:
+    """Save research results to the library."""
+    category = input_data.get("category", "")
+    topic = input_data.get("topic", "")
+    results = input_data.get("results", {})
+    query = input_data.get("query", "")
+    jurisdiction = input_data.get("jurisdiction", "")
+
+    if not category or not topic:
+        return "Need both category and topic to save."
+
+    path = research_library.save_research(
+        category=category,
+        topic=topic,
+        results=results,
+        query=query,
+        jurisdiction=jurisdiction,
+    )
+    return f"Saved to library: {category}/{topic} ({path.name})"
+
+
+def _library_list(input_data: dict) -> str:
+    """List all library categories and topics."""
+    categories = research_library.list_categories()
+    if not categories:
+        return "Research library is empty. Run some searches to populate it."
+
+    stale = research_library.list_stale()
+    stale_keys = {s["key"] for s in stale}
+
+    lines = []
+    for cat, topics in sorted(categories.items()):
+        lines.append(f"**{cat}:**")
+        for topic in sorted(topics):
+            key = research_library._topic_key(cat, topic)
+            marker = " (stale)" if key in stale_keys else ""
+            lines.append(f"  • {topic}{marker}")
+
+    return "\n".join(lines)
 
 
 def _check_task(input_data: dict, task_mgr) -> str:

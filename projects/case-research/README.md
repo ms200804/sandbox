@@ -67,15 +67,52 @@ All output is structured JSON — designed to pipe into the adversarial sim, ren
 - Rate limit: 5,000 requests/day (free tier)
 - Key endpoints: `/search/` (opinions), `/dockets/`, `/citations/`, `/courts/`
 
+## Research Library
+
+Results are saved to a persistent, indexed library so you don't re-research
+the same topics. Categories are created on the fly.
+
+```
+research/
+├── index.json                          # topic → file map with metadata + staleness
+└── topics/
+    ├── tvpa/
+    │   ├── private_right_of_action.json
+    │   └── fee_shifting_lodestar.json
+    ├── arbitration/
+    │   ├── unconscionability.json
+    │   └── separability_doctrine.json
+    └── [new categories created automatically]
+```
+
+- Bot checks library BEFORE hitting CourtListener
+- Stale topics (>90 days) flagged for refresh
+- Library is git-tracked — persists across clones
+- Adversarial sim agents can draw from library for authorities
+
+## Data Sources
+
+| Source | Use for | Coverage |
+|---|---|---|
+| **CourtListener** | Primary — current opinions, docket monitoring, citation chains | Excellent federal appellate; decent district; spotty state |
+| **Harvard CAP** | Historical precedent through 2018 | 6.7M cases, 360 years, published-in-print only |
+| **PACER** | Fallback for dockets not in RECAP | $0.10/page, comprehensive |
+
+**Important:** CL's citation network shows which cases cite which. It does NOT provide treatment status (reversed, distinguished, etc.) like Shepard's or KeyCite. Our "shepardize" tool is forward citation analysis — useful but not a Westlaw/Lexis replacement for definitive treatment.
+
 ## Architecture
 ```
 case-research/
 ├── README.md
 ├── cl_client.py          # CourtListener API client (httpx)
+├── library.py            # Persistent research library with indexing
 ├── researcher.py         # Agent logic: search → filter → analyze → output
 ├── prompts/
 │   └── researcher.md     # System prompt for the research agent
-└── output/               # Research results by topic/matter
+├── research/
+│   ├── index.json        # Library index
+│   └── topics/           # Saved research by category/topic
+└── output/               # One-off research results
 ```
 
 ## Integration with Adversarial Sim
