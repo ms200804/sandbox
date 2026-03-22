@@ -227,6 +227,41 @@ Add similar language to `prompts/judge.md`:
   concern you at oral argument or in chambers, not academic risks.
 ```
 
+## 12. Opposing Counsel calibration — evaluate your own attacks
+
+From the first run review: OC generates attacks but doesn't weigh how well they hold up against obvious counters. Add to `prompts/opposing_counsel.md`:
+
+```
+- For each attack, assess its SURVIVABILITY — how well does it hold up
+  when the other side responds with the obvious counter? An attack that
+  sounds devastating in isolation but collapses under a one-sentence
+  rebuttal is not a strong attack. Rate your own attacks honestly.
+- Factor in the adversary calibration. If the opponent is a bankrupt
+  pro se party, don't generate sophisticated counter-proposals they'd
+  never articulate. Flag when an attack is "smart but unlikely given
+  this opponent."
+- CRITICAL: Flag when preemptively rebutting one of your attacks would
+  HURT the movant. If you identify a clever argument the other side
+  would never think of on their own, say so: "This is a strong attack
+  but unlikely to be raised by this opponent. Do NOT address it
+  preemptively — you'd be giving them a roadmap." This is as important
+  as identifying the attack itself.
+```
+
+## 13. Practice-knowledge gaps in agent analysis
+
+The agents lack practice knowledge that experienced litigators have. Examples from the first run:
+
+- Intervention for charging liens is almost never granted outside the 5th Circuit contingency-interest exception. The agent treated "BF is not a party" as devastating when in practice, liens are preserved on the docket without party status — that's how it works in most jurisdictions.
+- "Departing counsel gets an interest but doesn't get to tank the case" is a basic principle of NY lien law that the agent didn't weigh properly.
+- The agent gave equal weight to all OC attacks without distinguishing between arguments that sound good in a brief vs. arguments a judge would actually credit.
+
+This is harder to fix through prompting alone — it's the gap between knowing doctrine and knowing practice. Two mitigations:
+
+1. Add to ALL Phase 1 prompts: "Distinguish between arguments that sound good on paper and arguments a judge would actually credit in the real world. A creative doctrinal argument that no court has ever adopted is less threatening than a simple factual argument the judge can verify from the docket."
+
+2. The Pragmatic Review agent (replacing Strategist) should specifically check: "Are any of the other agents' findings based on theoretical risks rather than practical ones?"
+
 ## Order of Operations
 
 1. Rename `strategist.md` → `pragmatic.md`, rewrite the prompt
