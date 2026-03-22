@@ -1,94 +1,118 @@
-# Adversarial Simulation — Multi-Agent Argument Refinement
+# Adversarial Simulation — Two-Phase Argument Stress-Testing
 
 ## Overview
-Uses Claude Code's subagent architecture to stress-test legal arguments before drafting. Multiple agents adopt distinct roles (advocate, adversary, judge) and iterate on the strength of an argument through structured rounds of critique and revision.
+Feed in a draft argument or legal position. The system runs it through independent adversarial pressure from multiple perspectives, then synthesizes the results into a prioritized vulnerability report and revised argument.
 
-## Concept
+## Architecture: Two Phases
 
-You feed in a draft argument or legal position. The system runs it through adversarial pressure:
+### Phase 1: Parallel Attack Surface (independent, no cross-talk)
 
-1. **Advocate** presents the argument
-2. **Adversary** attacks it — finds weaknesses, counter-authorities, factual gaps
-3. **Advocate** revises in response
-4. **Judge** scores the exchange, identifies unresolved issues, and decides if another round is needed
-5. Repeat until the judge is satisfied or max rounds reached
+Four agents analyze the argument simultaneously. They never see each other's output, preventing convergence and ensuring independent weakness discovery.
 
-The output is a refined argument plus a vulnerability report — what the other side will say and how to preempt it.
+| Agent | Lens | Finds |
+|---|---|---|
+| **Hostile OC** | "How do I win this motion?" | Actual attacks opposing counsel will make — case distinctions, procedural traps, factual gaps |
+| **Skeptical Judge** | "Why should I grant this?" | Missing elements, conclusory assertions, standard-of-review problems, threshold issues |
+| **Appellate Panel** | "Is the doctrine clean?" | Doctrinal errors, circuit splits, sloppy framing, preservation issues |
+| **Economic Realist** | "What are the real incentives?" | Settlement leverage, cost/benefit, remedy collectability, insurance angles |
 
-## Agent Roles
+Each outputs: top 3 weaknesses, strongest single attack vector, and suggested authorities.
 
-### Advocate
-- System prompt: aggressive plaintiff/defendant counsel (matches Matt's litigation style)
-- Job: present the strongest version of the argument, respond to attacks
-- Has access to: the brief/argument draft, relevant case law, facts
+### Phase 2: Sequential Synthesis
 
-### Adversary
-- System prompt: skilled opposing counsel
-- Job: find every weakness — factual, legal, procedural, strategic
-- Attacks: distinguishing cases, alternative interpretations, policy arguments, procedural defenses
-- Should be calibrated to the likely quality of actual opposing counsel (configurable)
+| Agent | Job |
+|---|---|
+| **Destroyer** | Reads ALL Phase 1 output. Ranks weaknesses by severity. Identifies compound weaknesses (same issue flagged by multiple agents from different angles). Produces prioritized vulnerability report. |
+| **Refiner** | Takes original argument + Destroyer's report. Revises to preempt top threats. Flags unfixable issues. Produces opposition playbook ("They'll argue X → Our response Y"). |
 
-### Judge
-- System prompt: experienced federal judge (or state, configurable by forum)
-- Job: evaluate the exchange, score persuasiveness, flag unaddressed issues
-- Outputs: structured scorecard + narrative assessment
-- Decides: "resolved" vs. "needs another round" vs. "fundamental problem"
+### Flow
+```
+Input: argument + case context + forum
+  │
+  ├─→ [Hostile OC]        ─┐
+  ├─→ [Skeptical Judge]    ─┤  Phase 1 (parallel)
+  ├─→ [Appellate Panel]    ─┤
+  ├─→ [Economic Realist]   ─┘
+  │                          │
+  │         ┌────────────────┘
+  │         ▼
+  ├─→ [Destroyer]  → vulnerability report     Phase 2 (sequential)
+  │         │
+  │         ▼
+  └─→ [Refiner]   → revised argument + opposition playbook
+```
 
-### Future Roles
-- **Law Clerk:** does independent research, flags cases neither side cited
-- **Mediator:** for settlement/demand letter scenarios, evaluates reasonableness
-- **Jury:** for trial arguments, tests comprehension and persuasion at lay level
+## Usage
 
-## Architecture
+```bash
+# Full simulation (Phase 1 + Phase 2)
+python sim.py scenarios/example.md
 
+# Phase 1 only (just the four parallel analyses)
+python sim.py scenarios/example.md --phase1-only
+
+# Use a specific model
+python sim.py scenarios/example.md --model claude-opus-4-6
+```
+
+## Output Structure
+```
+output/example_20260321_143022/
+├── summary.md              # Index with reading order
+├── phase1_hostile_oc.md    # Independent OC attack analysis
+├── phase1_skeptical_judge.md
+├── phase1_appellate_panel.md
+├── phase1_economic_realist.md
+├── phase2_destroyer.md     # Synthesized vulnerability report
+└── phase2_refiner.md       # Revised argument + opposition playbook
+```
+
+**Reading order:** Start with `phase2_refiner.md` (the revised argument and playbook), then `phase2_destroyer.md` (full vulnerability report), then individual Phase 1 files for deep dives.
+
+## Scenario Format
+
+Scenarios go in `scenarios/`. See `scenarios/example.md` for the template:
+
+```markdown
+# Scenario Title
+
+## Forum
+[Court — e.g., SDNY, 9th Cir., CDCA]
+
+## Position
+[Who you represent and what you're arguing]
+
+## Context
+[Facts, procedural posture, key issues]
+
+## Key Authorities (Starting Point)
+[Cases and statutes — gives agents a starting point but they'll find more]
+```
+
+## Directory Structure
 ```
 adversarial-sim/
-├── README.md
-├── sim.py                # Orchestrator: spawns agents, manages rounds
+├── sim.py              # Orchestrator
 ├── prompts/
-│   ├── advocate.md       # Advocate system prompt
-│   ├── adversary.md      # Adversary system prompt
-│   └── judge.md          # Judge system prompt
-├── scenarios/            # Input scenarios (argument + context)
+│   ├── hostile_oc.md       # Phase 1
+│   ├── skeptical_judge.md  # Phase 1
+│   ├── appellate_panel.md  # Phase 1
+│   ├── economic_realist.md # Phase 1
+│   ├── destroyer.md        # Phase 2
+│   └── refiner.md          # Phase 2
+├── scenarios/
 │   └── example.md
-└── output/               # Simulation transcripts + scorecards
+└── output/             # Simulation results (gitignored)
 ```
 
-## Workflow
+## Requirements
+- Claude CLI (`claude` command) installed and `ANTHROPIC_API_KEY` set
+- Python 3.10+
 
-```
-Input: argument draft + case context + forum
-  │
-  ├─→ [Advocate Agent] presents argument
-  │        │
-  │        ▼
-  ├─→ [Adversary Agent] attacks
-  │        │
-  │        ▼
-  ├─→ [Advocate Agent] revises
-  │        │
-  │        ▼
-  └─→ [Judge Agent] scores
-           │
-           ├─→ "Resolved" → output final argument + vulnerability report
-           └─→ "Another round" → loop back to Adversary
-```
-
-## Design Decisions
-
-### Start Simple
-Phase 1: Two agents only (advocate + adversary), 3 rounds max, no judge.
-- Prove the concept works and produces useful output
-- See if the adversary finds real weaknesses vs. generic objections
-
-Phase 2: Add judge agent for scoring and loop control.
-
-Phase 3: Add law clerk for independent research (integrate with case-research project).
-
-### Key Questions
-- [ ] How much case context to give each agent? Full brief vs. summary?
-- [ ] Should adversary have access to case-research tool for finding counter-authorities?
-- [ ] Fixed round count vs. judge-controlled termination?
-- [ ] Output format: transcript + scorecard, or revised brief with annotations?
-- [ ] How to calibrate adversary strength? (Public defender vs. BigLaw vs. DOJ)
-- [ ] Should the advocate agent match Matt's writing style (use tone_references)?
+## Future Enhancements
+- [ ] Integration with case-research project (give Hostile OC access to CourtListener for counter-authorities)
+- [ ] Law Clerk agent: independent research, flags cases neither side cited
+- [ ] Mediator mode: for settlement/demand letter scenarios
+- [ ] Jury mode: for trial arguments, tests lay comprehension
+- [ ] Configurable adversary calibration (standard / aggressive / elite)
+- [ ] Multiple rounds: feed Refiner output back through Phase 1 for a second pass
