@@ -101,11 +101,109 @@ Bad instructions: "Be thorough." "Focus on the key issues." These add
 nothing. The agents already do this.]
 ```
 
+## 6. Embed tone guide rules in `prompts/reviser.md`
+
+Add a "Writing Style" section to the Reviser prompt with these rules from Matt's tone guide (`tone_references/tone_guide.md` in the claude repo):
+
+```
+## Writing Style
+
+Match this voice when producing draft language:
+- CRAC structure (Conclusion, Rule, Application, Conclusion)
+- Anglo-Saxon word preference over Latinate ("show" not "demonstrate")
+- Em-dashes with no spaces — max one pair per paragraph
+- Selective quoting: paraphrase the holding, then quote only the key phrase
+- No gratuitous definitions (don't define terms you only use once)
+- Oxford comma always
+- Year-as-parenthetical gets commas: "In *Chambers*, 501 U.S. 32 (1991), the Court..."
+- Aggressive but precise — never bombastic or overwrought
+- Cite every sentence in a Statement of Facts
+- Plural: "data are," "media are"
+```
+
+If the tone guide is updated in the claude repo, update this section to match. The tone guide changes rarely.
+
+## 7. Citation verification of sim output
+
+After Phase 2 completes, run the citation extractor on ALL output files (phase1_*.md, phase2_*.md). For every citation the agents produced, attempt to verify against CourtListener.
+
+Write results to `research_followup/[scenario_name].md`:
+
+```markdown
+## Citation Verification (from sim output)
+- [x] 501 U.S. 32 — Chambers v. NASCO — verified ✓
+- [x] 868 F.2d 684 — Villanueva v. CNA — verified ✓
+- [ ] 743 F.3d 218 — NOT FOUND IN CL. Cited by: opposing_counsel.
+      May be hallucinated. Verify on Lexis before relying on it.
+- [?] 302 A.D.2d 183 — Schneider — found in CL but CL state coverage
+      is spotty. Confirm on Lexis.
+```
+
+**Important:** CL is not perfect. A case NOT being in CL doesn't necessarily mean it's hallucinated — CL has gaps, especially for:
+- State court opinions (NY, TX, CA coverage varies)
+- Unpublished district court opinions
+- Very recent opinions not yet indexed
+
+So the verification output should use three statuses:
+- **verified** — found in CL with matching citation and case name
+- **not found** — not in CL. Could be hallucinated OR a CL gap. Flag for Lexis.
+- **partial** — found but metadata doesn't fully match (e.g., different citation format, different case name spelling). Flag for manual confirmation.
+
+All "not found" and "partial" entries go into the research follow-up for manual Lexis verification on the next round.
+
+## 8. Auto-research from sim gaps
+
+When the Attacker identifies research gaps (e.g., "no Fifth Circuit authority on X"), automatically run a CL search before writing the follow-up note. Three outcomes:
+
+- **CL finds relevant cases** → save to library, note in follow-up as "resolved by CL — review for quality"
+- **CL finds nothing** → write follow-up note for Lexis
+- **CL finds tangentially related cases** → save to library, note as "partial — may need Lexis for direct authority"
+
+This means the follow-up folder only contains genuine gaps that CL can't fill. Reduces manual Lexis work to what actually needs it.
+
+## 9. Confidence scoring in the research library
+
+Add a `confidence` field to library entries in `library.py`. Score based on:
+
+- **high**: binding authority found in target circuit, adverse authority checked, multiple confirming cases, citations verified
+- **medium**: persuasive authority only, OR binding authority found but not shepardized/verified, OR results only from CL (state court gaps possible)
+- **low**: few results, narrow CL coverage for this jurisdiction/topic, not verified against Lexis
+
+The Slack bot and sim agents should surface confidence when using library data: "I have cases on this but confidence is medium — CL-only, haven't checked for adverse authority."
+
+The confidence score should upgrade when:
+- Matt confirms cases via Lexis ("that's good law" → bump to high)
+- Shepardize results come back clean
+- Additional research fills gaps
+
+And downgrade when:
+- Cases are old and haven't been re-checked
+- Staleness timer triggers (existing 90-day mechanism)
+
+## 10. Matter-specific research tagging
+
+Add an optional `matters` field to library entries:
+
+```json
+{
+  "category": "tvpa",
+  "topic": "charging_liens",
+  "matters": ["hubbard_goedinghaus_tvpa"],
+  ...
+}
+```
+
+When running a sim for a specific matter, the orchestrator pulls all research tagged to that matter and injects it as context for the agents. Over time each matter builds a curated research base.
+
+The Slack bot should tag research to a matter when context makes it obvious (e.g., research done in a thread about Hubbard gets tagged to hubbard_goedinghaus_tvpa).
+
 ## Order of Operations
 
 1. Rename `strategist.md` → `pragmatic.md`, rewrite the prompt
 2. Add the "affirmatively clear" language to all 6 Phase 1 prompts (including the new pragmatic)
-3. Update `reviser.md` with the draft-language output expectations
-4. Update `sim.py` — change PHASE1_AGENTS list, add research gap extraction after Phase 2
-5. Update `scenarios/TEMPLATE.md` with the Agent Instructions guidance
-6. Test with the same Hubbard scenario to compare output
+3. Update `reviser.md` with draft-language output expectations + tone guide rules
+4. Update `sim.py` — change PHASE1_AGENTS list, add post-Phase-2 citation verification and research gap extraction
+5. Update `library.py` — add confidence scoring and matter tagging fields
+6. Update `scenarios/TEMPLATE.md` with the Agent Instructions guidance
+7. Commit all changes
+8. Test with the same Hubbard scenario to compare output against the first run
