@@ -118,11 +118,25 @@ REPORTERS = [
     r"S\.W\.2d",
     r"So\.\s*3d",
     r"So\.\s*2d",
+    # New York
+    r"N\.Y\.3d",
+    r"N\.Y\.2d",
+    r"N\.Y\.",
+    r"A\.D\.3d",
+    r"A\.D\.2d",
+    r"Misc\.\s*3d",
+    r"Misc\.\s*2d",
     # California
     r"Cal\.\s*App\.\s*5th",
     r"Cal\.\s*App\.\s*4th",
     r"Cal\.\s*5th",
     r"Cal\.\s*4th",
+    r"Cal\.\s*Rptr\.\s*3d",
+    r"Cal\.\s*Rptr\.\s*2d",
+    # Texas
+    r"S\.W\.3d",
+    r"S\.W\.2d",
+    r"Tex\.\s*App\.",
 ]
 
 # Build the master regex
