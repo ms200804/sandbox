@@ -122,7 +122,82 @@ def parse_scenario_metadata(scenario_text: str) -> dict:
     if rounds_match:
         metadata["max_rounds"] = int(rounds_match.group(1))
 
+    # Input level
+    level_match = re.search(
+        r'##\s*Input Level\s*\n+\s*(\w+)', scenario_text, re.IGNORECASE
+    )
+    if level_match:
+        metadata["input_level"] = level_match.group(1).strip().lower()
+
+    # Agent instructions (custom per-scenario)
+    instr_match = re.search(
+        r'##\s*Agent Instructions\s*\n+([\s\S]*?)(?=\n##\s|\Z)',
+        scenario_text, re.IGNORECASE
+    )
+    if instr_match:
+        metadata["agent_instructions"] = instr_match.group(1).strip()
+
     return metadata
+
+
+def detect_input_level(scenario_text: str) -> str:
+    """
+    Auto-detect input level based on content characteristics.
+    Returns: bare_issue, issue_with_facts, outline, draft_brief
+    """
+    # Strip metadata sections for length check
+    content = re.sub(r'^##\s*(Forum|Position|Adversary Calibration|Input Level|'
+                     r'Key Authorities|Max Rounds|Brief|Agent Instructions).*?'
+                     r'(?=\n##\s|\Z)', '', scenario_text,
+                     flags=re.MULTILINE | re.DOTALL | re.IGNORECASE)
+
+    # Check for inlined brief text
+    if '## Full Brief Text' in scenario_text:
+        return 'draft_brief'
+
+    word_count = len(content.split())
+    has_citations = bool(re.search(r'\d+\s+(U\.S\.|F\.\d|S\.\s*Ct|F\.\s*Supp)', content))
+    has_headings = len(re.findall(r'^#{1,4}\s', content, re.MULTILINE)) > 3
+    has_numbered_args = bool(re.search(r'^\s*\d+\.\s+\*?\*?[A-Z]', content, re.MULTILINE))
+
+    if word_count > 2000 or (word_count > 800 and has_citations):
+        return 'draft_brief'
+    if has_headings or has_numbered_args:
+        return 'outline'
+    if word_count > 150:
+        return 'issue_with_facts'
+    return 'bare_issue'
+
+
+# Level-specific instructions appended to each Phase 1 agent's context
+INPUT_LEVEL_INSTRUCTIONS = {
+    "bare_issue": (
+        "This is an early-stage legal question — no draft argument exists yet. "
+        "Provide strategic, directional analysis. Map the doctrinal landscape. "
+        "Identify the strongest and weakest angles. Flag threshold issues. "
+        "Do NOT critique specific language, structure, or citations (there aren't any). "
+        "Your output should help decide WHETHER and HOW to make this argument."
+    ),
+    "issue_with_facts": (
+        "This is a developed legal position with facts but no drafted argument. "
+        "Evaluate the legal theories against the stated facts. Identify elements "
+        "that are satisfied vs. missing. Flag factual gaps that need investigation. "
+        "Your output should help shape the argument's structure and emphasis."
+    ),
+    "outline": (
+        "This is a structured argument outline. Evaluate the architecture: "
+        "argument order, emphasis, completeness, logical flow. Check whether "
+        "the planned authorities support each point. Identify missing arguments "
+        "or arguments that should be cut. Your output should refine the blueprint."
+    ),
+    "draft_brief": (
+        "This is a drafted brief. Perform detailed, line-level analysis. "
+        "Check specific citations (do they say what's claimed?), factual assertions "
+        "(are they supported?), structural choices (right order? right emphasis?), "
+        "and language (any concessions or admissions that shouldn't be there?). "
+        "Your output should identify specific passages to fix, cut, or strengthen."
+    ),
+}
 
 
 def run_claude(system_prompt: str, user_message: str,
@@ -151,7 +226,9 @@ def run_claude(system_prompt: str, user_message: str,
 
 def run_phase1_agent(role: str, scenario: str, model: str,
                      calibration: str | None = None,
-                     forum: str | None = None) -> dict:
+                     forum: str | None = None,
+                     input_level: str | None = None,
+                     agent_instructions: str | None = None) -> dict:
     """Run a single Phase 1 agent. Returns dict with role and response."""
     print(f"  [{role}] Starting...")
     prompt = load_prompt(role)
@@ -162,6 +239,14 @@ def run_phase1_agent(role: str, scenario: str, model: str,
         "Follow your role instructions exactly and produce your analysis "
         "in the specified output format.",
     ]
+
+    # Input-level instructions tell agents how deep to go
+    if input_level and input_level in INPUT_LEVEL_INSTRUCTIONS:
+        instructions.append(INPUT_LEVEL_INSTRUCTIONS[input_level])
+
+    # Custom agent instructions from the scenario override defaults
+    if agent_instructions:
+        instructions.append(agent_instructions)
 
     if calibration and role == "hostile_oc":
         instructions.append(
@@ -190,17 +275,22 @@ def run_phase1_agent(role: str, scenario: str, model: str,
 def run_phase1(scenario: str, model: str, output_dir: Path,
                calibration: str | None = None,
                forum: str | None = None,
+               input_level: str | None = None,
+               agent_instructions: str | None = None,
                pass_num: int = 1) -> dict:
     """Run all Phase 1 agents in parallel. Returns results dict."""
     pass_label = f" (pass {pass_num})" if pass_num > 1 else ""
     print(f"═══ Phase 1: Parallel Attack Surface{pass_label} ═══")
+    if input_level:
+        print(f"  Input level: {input_level}")
 
     phase1_results = {}
 
     with ThreadPoolExecutor(max_workers=6) as executor:
         futures = {
             executor.submit(
-                run_phase1_agent, role, scenario, model, calibration, forum
+                run_phase1_agent, role, scenario, model,
+                calibration, forum, input_level, agent_instructions,
             ): role
             for role in PHASE1_AGENTS
         }
@@ -286,6 +376,10 @@ def run_simulation(scenario_path: str, model: str = DEFAULT_MODEL,
     metadata = parse_scenario_metadata(scenario)
     calibration = metadata.get("calibration")
     forum = metadata.get("forum")
+    agent_instructions = metadata.get("agent_instructions")
+
+    # Input level: explicit from scenario, or auto-detect
+    input_level = metadata.get("input_level") or detect_input_level(scenario)
 
     # Scenario can override pass count
     if metadata.get("max_rounds") and passes == 1:
@@ -298,6 +392,7 @@ def run_simulation(scenario_path: str, model: str = DEFAULT_MODEL,
 
     print(f"Adversarial Simulation: {scenario_path}")
     print(f"Model: {model}")
+    print(f"Input level: {input_level}")
     print(f"Agents: {len(PHASE1_AGENTS)} (Phase 1) + {len(PHASE2_AGENTS)} (Phase 2)")
     print(f"Passes: {passes}")
     if calibration:
@@ -316,7 +411,9 @@ def run_simulation(scenario_path: str, model: str = DEFAULT_MODEL,
         # Phase 1
         phase1_results = run_phase1(
             current_scenario, model, output_dir,
-            calibration=calibration, forum=forum, pass_num=pass_num,
+            calibration=calibration, forum=forum,
+            input_level=input_level, agent_instructions=agent_instructions,
+            pass_num=pass_num,
         )
 
         successful = {k: v for k, v in phase1_results.items() if v.get("response")}

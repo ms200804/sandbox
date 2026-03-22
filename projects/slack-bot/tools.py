@@ -24,7 +24,8 @@ TOOL_DEFINITIONS = [
         "description": (
             "Run an adversarial simulation on a legal argument. "
             "Provide either a scenario file path (relative to adversarial-sim/scenarios/) "
-            "or an inline argument description. Returns immediately with a task ID; "
+            "or an inline argument description. The orchestrator will ask clarifying "
+            "questions before running unless force=true. Returns immediately with a task ID; "
             "results are posted to the Slack thread when complete."
         ),
         "input_schema": {
@@ -38,13 +39,33 @@ TOOL_DEFINITIONS = [
                     "type": "string",
                     "description": (
                         "If no scenario file, describe the argument inline. "
-                        "Include: forum, position, context, and any key authorities."
+                        "Can be anything from a bare legal question to a full brief. "
+                        "The orchestrator will classify the input level and ask "
+                        "clarifying questions if needed."
                     ),
                 },
-                "model": {
+                "forum": {
                     "type": "string",
-                    "description": "Claude model to use (default: claude-sonnet-4-6)",
-                    "default": "claude-sonnet-4-6",
+                    "description": "Court/forum (e.g., 'SDNY', '9th Cir.', 'CDCA')",
+                },
+                "calibration": {
+                    "type": "string",
+                    "enum": ["standard", "aggressive", "elite"],
+                    "description": "Adversary calibration level (default: aggressive)",
+                    "default": "aggressive",
+                },
+                "force": {
+                    "type": "boolean",
+                    "description": (
+                        "If true, skip clarifying questions and run immediately "
+                        "with reasonable assumptions. Default: false (ask first)."
+                    ),
+                    "default": False,
+                },
+                "passes": {
+                    "type": "integer",
+                    "description": "Number of full passes (default: 1)",
+                    "default": 1,
                 },
                 "phase1_only": {
                     "type": "boolean",
@@ -99,6 +120,47 @@ TOOL_DEFINITIONS = [
                 },
             },
             "required": ["citation"],
+        },
+    },
+    {
+        "name": "find_similar_cases",
+        "description": (
+            "Find cases similar to a specific case or set of cases. "
+            "Uses CourtListener's citation network to find opinions that cite "
+            "the same authorities, address the same legal issues, or have "
+            "similar fact patterns. Use this when the user says 'more like this' "
+            "or 'find similar' after reviewing research results."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "reference_case": {
+                    "type": "string",
+                    "description": (
+                        "Citation or CL ID of the case to find similar cases to. "
+                        "Can also be a case name if unambiguous."
+                    ),
+                },
+                "aspect": {
+                    "type": "string",
+                    "description": (
+                        "What aspect to find similar on: 'holding' (same legal issue), "
+                        "'facts' (similar fact pattern), 'cited_by' (cases citing the same "
+                        "authorities), or 'all' (default)"
+                    ),
+                    "default": "all",
+                },
+                "court": {
+                    "type": "string",
+                    "description": "Court filter for similar cases",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max results (default 10)",
+                    "default": 10,
+                },
+            },
+            "required": ["reference_case"],
         },
     },
     {
@@ -211,6 +273,7 @@ def execute_tool(name: str, input_data: dict, task_mgr,
     handlers = {
         "run_adversarial_sim": _run_adversarial_sim,
         "search_cases": _search_cases,
+        "find_similar_cases": _find_similar_cases,
         "lookup_citation": _lookup_citation,
         "shepardize": _shepardize,
         "check_task": _check_task,
@@ -236,7 +299,10 @@ def _run_adversarial_sim(input_data: dict, task_mgr,
     """Launch an adversarial sim as a background task."""
     scenario_file = input_data.get("scenario_file")
     inline = input_data.get("inline_argument")
-    model = input_data.get("model", "claude-sonnet-4-6")
+    forum = input_data.get("forum")
+    calibration = input_data.get("calibration", "aggressive")
+    force = input_data.get("force", False)
+    passes = input_data.get("passes", 1)
     phase1_only = input_data.get("phase1_only", False)
 
     if scenario_file:
@@ -245,16 +311,47 @@ def _run_adversarial_sim(input_data: dict, task_mgr,
             available = [f.name for f in (ADVERSARIAL_SIM_DIR / "scenarios").glob("*.md")]
             return f"Scenario not found: {scenario_file}. Available: {available}"
     elif inline:
-        # Write inline argument to a temp scenario file
+        # Build a scenario file from the inline input
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         scenario_path = ADVERSARIAL_SIM_DIR / "scenarios" / f"inline_{timestamp}.md"
-        scenario_path.write_text(f"# Inline Scenario\n\n{inline}")
+
+        # Compose scenario with metadata
+        sections = [f"# Inline Scenario ({timestamp})"]
+        if forum:
+            sections.append(f"\n## Forum\n{forum}")
+        sections.append(f"\n## Adversary Calibration\n{calibration}")
+        sections.append(f"\n## Context\n{inline}")
+        scenario_path.write_text("\n".join(sections))
     else:
         return "Provide either scenario_file or inline_argument."
 
+    # If not forced, return clarifying questions instead of launching
+    if not force and inline and not scenario_file:
+        # Read the orchestrator prompt and use it to generate questions
+        # For now, check for minimum required info
+        missing = []
+        if not forum:
+            missing.append("What forum/court is this in?")
+
+        # Detect input level to ask appropriate questions
+        content = scenario_path.read_text()
+        word_count = len(content.split())
+        if word_count < 100:
+            missing.append("Can you give me a bit more context on the facts and procedural posture?")
+            missing.append("Which side are you on?")
+        elif word_count < 300:
+            missing.append("Any key cases you're planning to rely on?")
+
+        if missing:
+            questions = "\n".join(f"• {q}" for q in missing)
+            return (
+                f"Before I run this, a couple quick questions:\n\n{questions}\n\n"
+                f"Or say 'just run it' and I'll make reasonable assumptions."
+            )
+
     cmd = ["python", str(ADVERSARIAL_SIM_DIR / "sim.py"), str(scenario_path)]
-    if model != "claude-sonnet-4-6":
-        cmd.extend(["--model", model])
+    if passes > 1:
+        cmd.extend(["--passes", str(passes)])
     if phase1_only:
         cmd.append("--phase1-only")
 
@@ -272,9 +369,10 @@ def _run_adversarial_sim(input_data: dict, task_mgr,
 
     return (
         f"Adversarial sim launched (task_id: {task_id}). "
-        f"Scenario: {scenario_path.name}, Model: {model}. "
-        f"This will take a few minutes — I'll post results to #adversarial when done. "
-        f"Use check_task to monitor progress."
+        f"Scenario: {scenario_path.name}, Calibration: {calibration}, "
+        f"Passes: {passes}. "
+        f"Running 6 agents in parallel on Opus — I'll post results "
+        f"to #adversarial when done. Use check_task to monitor."
     )
 
 
@@ -292,6 +390,25 @@ def _search_cases(input_data: dict) -> str:
             f"CourtListener search not yet implemented. "
             f"Query: '{query}', Court: {court}, After: {date_after}, Limit: {limit}. "
             f"Need to implement cl_client.py with httpx first."
+        ),
+    })
+
+
+def _find_similar_cases(input_data: dict) -> str:
+    """Find cases similar to a reference case."""
+    # TODO: Implement via CL citation network
+    ref = input_data.get("reference_case", "")
+    aspect = input_data.get("aspect", "all")
+    court = input_data.get("court")
+    limit = input_data.get("limit", 10)
+
+    return json.dumps({
+        "status": "not_implemented",
+        "message": (
+            f"Find-similar not yet implemented. "
+            f"Reference: '{ref}', Aspect: {aspect}, Court: {court}, Limit: {limit}. "
+            f"Will use CL citation network: find opinions that cite the same authorities "
+            f"as the reference case, filter by court/date, and rank by citation overlap."
         ),
     })
 
