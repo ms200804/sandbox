@@ -3,19 +3,21 @@
 Adversarial Simulation Orchestrator
 
 Two-phase architecture for stress-testing legal arguments:
-  Phase 1: Four parallel agents analyze independently (no cross-talk)
+  Phase 1: Six parallel agents analyze independently (no cross-talk)
   Phase 2: Destroyer synthesizes + Refiner revises (sequential)
+  Optional: Multi-pass (feed revised argument back through Phase 1)
 
 Usage:
     python sim.py scenarios/example.md
     python sim.py scenarios/example.md --phase1-only
-    python sim.py scenarios/example.md --model claude-sonnet-4-6
+    python sim.py scenarios/example.md --passes 2
 
 Requires: claude CLI installed and ANTHROPIC_API_KEY set.
 """
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -31,10 +33,15 @@ PHASE1_AGENTS = [
     "skeptical_judge",
     "appellate_panel",
     "economic_realist",
+    "procedural_tactician",
+    "record_auditor",
 ]
 
 # Phase 2 agents — run sequentially
 PHASE2_AGENTS = ["destroyer", "refiner"]
+
+# Default model — Opus across the board, no corner-cutting
+DEFAULT_MODEL = "claude-opus-4-6"
 
 
 def load_prompt(role: str) -> str:
@@ -46,11 +53,80 @@ def load_prompt(role: str) -> str:
 
 
 def load_scenario(path: str) -> str:
-    """Load a scenario file."""
-    return Path(path).read_text()
+    """
+    Load a scenario file and resolve any brief file references.
+
+    Supports a `brief:` field in the scenario that points to an external file:
+        ## Brief
+        brief: path/to/draft_mtd_opp.md
+
+    The referenced file's contents are inlined into the scenario.
+    Paths are resolved relative to the scenario file's directory.
+    """
+    scenario_path = Path(path)
+    content = scenario_path.read_text()
+
+    # Look for brief file references: "brief: path/to/file.md"
+    brief_match = re.search(r'^brief:\s*(.+)$', content, re.MULTILINE)
+    if brief_match:
+        brief_rel_path = brief_match.group(1).strip()
+        brief_path = (scenario_path.parent / brief_rel_path).resolve()
+
+        if not brief_path.exists():
+            print(f"WARNING: Brief file not found: {brief_path}")
+        else:
+            brief_text = brief_path.read_text()
+            # Replace the brief: line with the actual brief content
+            content = content[:brief_match.start()] + (
+                f"## Full Brief Text\n\n{brief_text}"
+            ) + content[brief_match.end():]
+            print(f"  Inlined brief: {brief_path} ({len(brief_text)} chars)")
+
+    return content
 
 
-def run_claude(system_prompt: str, user_message: str, model: str = "claude-sonnet-4-6") -> str:
+def parse_scenario_metadata(scenario_text: str) -> dict:
+    """
+    Extract metadata fields from a scenario file.
+
+    Looks for:
+        ## Adversary Calibration
+        aggressive
+
+        ## Forum
+        SDNY
+
+        ## Max Rounds (for multi-pass)
+        2
+    """
+    metadata = {}
+
+    # Calibration
+    cal_match = re.search(
+        r'##\s*Adversary Calibration\s*\n+\s*(\w+)', scenario_text, re.IGNORECASE
+    )
+    if cal_match:
+        metadata["calibration"] = cal_match.group(1).strip().lower()
+
+    # Forum
+    forum_match = re.search(
+        r'##\s*Forum\s*\n+\s*(.+)', scenario_text, re.IGNORECASE
+    )
+    if forum_match:
+        metadata["forum"] = forum_match.group(1).strip()
+
+    # Max rounds / passes
+    rounds_match = re.search(
+        r'##\s*Max Rounds\s*\n+\s*(\d+)', scenario_text, re.IGNORECASE
+    )
+    if rounds_match:
+        metadata["max_rounds"] = int(rounds_match.group(1))
+
+    return metadata
+
+
+def run_claude(system_prompt: str, user_message: str,
+               model: str = DEFAULT_MODEL) -> str:
     """
     Run a Claude CLI call with a system prompt and user message.
 
@@ -64,7 +140,7 @@ def run_claude(system_prompt: str, user_message: str, model: str = "claude-sonne
         ["claude", "--print", "--model", model, full_prompt],
         capture_output=True,
         text=True,
-        timeout=300,  # 5 min per agent
+        timeout=600,  # 10 min per agent (Opus can be slower)
     )
 
     if result.returncode != 0:
@@ -73,16 +149,33 @@ def run_claude(system_prompt: str, user_message: str, model: str = "claude-sonne
     return result.stdout.strip()
 
 
-def run_phase1_agent(role: str, scenario: str, model: str) -> dict:
+def run_phase1_agent(role: str, scenario: str, model: str,
+                     calibration: str | None = None,
+                     forum: str | None = None) -> dict:
     """Run a single Phase 1 agent. Returns dict with role and response."""
     print(f"  [{role}] Starting...")
     prompt = load_prompt(role)
+
+    # Build context-aware instructions
+    instructions = [
+        "Analyze the argument presented in the scenario above.",
+        "Follow your role instructions exactly and produce your analysis "
+        "in the specified output format.",
+    ]
+
+    if calibration and role == "hostile_oc":
+        instructions.append(
+            f"Calibration level: {calibration}. Adjust your attack intensity accordingly."
+        )
+
+    if forum:
+        instructions.append(
+            f"Forum: {forum}. Apply the procedural rules and precedent of this jurisdiction."
+        )
+
     user_msg = (
         f"## Scenario\n\n{scenario}\n\n"
-        f"## Instructions\n\n"
-        f"Analyze the argument presented in the scenario above. "
-        f"Follow your role instructions exactly and produce your analysis "
-        f"in the specified output format."
+        f"## Instructions\n\n" + " ".join(instructions)
     )
 
     try:
@@ -94,42 +187,37 @@ def run_phase1_agent(role: str, scenario: str, model: str) -> dict:
         return {"role": role, "response": None, "error": str(e)}
 
 
-def run_simulation(scenario_path: str, model: str = "claude-sonnet-4-6",
-                   phase1_only: bool = False):
-    """Run a full adversarial simulation."""
-    scenario = load_scenario(scenario_path)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    scenario_name = Path(scenario_path).stem
-    output_dir = OUTPUT_DIR / f"{scenario_name}_{timestamp}"
-    output_dir.mkdir(parents=True, exist_ok=True)
+def run_phase1(scenario: str, model: str, output_dir: Path,
+               calibration: str | None = None,
+               forum: str | None = None,
+               pass_num: int = 1) -> dict:
+    """Run all Phase 1 agents in parallel. Returns results dict."""
+    pass_label = f" (pass {pass_num})" if pass_num > 1 else ""
+    print(f"═══ Phase 1: Parallel Attack Surface{pass_label} ═══")
 
-    print(f"Adversarial Simulation: {scenario_path}")
-    print(f"Model: {model}")
-    print(f"Output: {output_dir}")
-    print()
-
-    # ── Phase 1: Parallel independent analysis ──────────────────────
-    print("═══ Phase 1: Parallel Attack Surface ═══")
     phase1_results = {}
 
-    with ThreadPoolExecutor(max_workers=4) as executor:
+    with ThreadPoolExecutor(max_workers=6) as executor:
         futures = {
-            executor.submit(run_phase1_agent, role, scenario, model): role
+            executor.submit(
+                run_phase1_agent, role, scenario, model, calibration, forum
+            ): role
             for role in PHASE1_AGENTS
         }
         for future in as_completed(futures):
             result = future.result()
             phase1_results[result["role"]] = result
 
-    # Save Phase 1 results individually
+    # Save Phase 1 results
+    suffix = f"_pass{pass_num}" if pass_num > 1 else ""
     for role, result in phase1_results.items():
-        out_path = output_dir / f"phase1_{role}.md"
+        out_path = output_dir / f"phase1_{role}{suffix}.md"
         if result["response"]:
             out_path.write_text(result["response"])
         else:
             out_path.write_text(f"# ERROR\n\n{result['error']}")
 
-    # Check for failures
+    # Report
     failures = [r for r in phase1_results.values() if r["error"]]
     if failures:
         print(f"\nWARNING: {len(failures)} agent(s) failed:")
@@ -137,19 +225,21 @@ def run_simulation(scenario_path: str, model: str = "claude-sonnet-4-6",
             print(f"  - {f['role']}: {f['error']}")
 
     successful = {k: v for k, v in phase1_results.items() if v["response"]}
-    if not successful:
-        print("All Phase 1 agents failed. Aborting.")
-        return
+    print(f"\nPhase 1{pass_label} complete: "
+          f"{len(successful)}/{len(PHASE1_AGENTS)} agents succeeded")
 
-    print(f"\nPhase 1 complete: {len(successful)}/{len(PHASE1_AGENTS)} agents succeeded")
+    return phase1_results
 
-    if phase1_only:
-        print(f"\n--phase1-only flag set. Results in {output_dir}")
-        _write_summary(output_dir, phase1_results, None, None, scenario_path)
-        return
 
-    # ── Phase 2: Sequential synthesis ───────────────────────────────
-    print("\n═══ Phase 2: Synthesis ═══")
+def run_phase2(scenario: str, phase1_results: dict, model: str,
+               output_dir: Path, pass_num: int = 1) -> tuple[str, str]:
+    """Run Phase 2 (Destroyer + Refiner). Returns (destroyer, refiner) responses."""
+    pass_label = f" (pass {pass_num})" if pass_num > 1 else ""
+    suffix = f"_pass{pass_num}" if pass_num > 1 else ""
+
+    print(f"\n═══ Phase 2: Synthesis{pass_label} ═══")
+
+    successful = {k: v for k, v in phase1_results.items() if v.get("response")}
 
     # Compile Phase 1 output for Destroyer
     phase1_compiled = "\n\n---\n\n".join(
@@ -162,14 +252,14 @@ def run_simulation(scenario_path: str, model: str = "claude-sonnet-4-6",
     destroyer_prompt = load_prompt("destroyer")
     destroyer_msg = (
         f"## Original Scenario\n\n{scenario}\n\n"
-        f"## Phase 1 Analyses\n\n{phase1_compiled}\n\n"
+        f"## Phase 1 Analyses ({len(successful)} agents)\n\n{phase1_compiled}\n\n"
         f"## Instructions\n\n"
         f"Synthesize all Phase 1 analyses into a unified, prioritized "
         f"vulnerability report. Follow your role instructions exactly."
     )
     destroyer_response = run_claude(destroyer_prompt, destroyer_msg, model)
     print(f"  [destroyer] Done ({len(destroyer_response)} chars)")
-    (output_dir / "phase2_destroyer.md").write_text(destroyer_response)
+    (output_dir / f"phase2_destroyer{suffix}.md").write_text(destroyer_response)
 
     # Refiner: revise the argument
     print("  [refiner] Starting...")
@@ -184,25 +274,108 @@ def run_simulation(scenario_path: str, model: str = "claude-sonnet-4-6",
     )
     refiner_response = run_claude(refiner_prompt, refiner_msg, model)
     print(f"  [refiner] Done ({len(refiner_response)} chars)")
-    (output_dir / "phase2_refiner.md").write_text(refiner_response)
+    (output_dir / f"phase2_refiner{suffix}.md").write_text(refiner_response)
 
-    # ── Write summary ───────────────────────────────────────────────
-    _write_summary(output_dir, phase1_results, destroyer_response,
-                   refiner_response, scenario_path)
+    return destroyer_response, refiner_response
 
-    print(f"\nSimulation complete. All output in {output_dir}")
-    print(f"  Start with: phase2_refiner.md (revised argument + opposition playbook)")
-    print(f"  Deep dive:  phase2_destroyer.md (full vulnerability report)")
+
+def run_simulation(scenario_path: str, model: str = DEFAULT_MODEL,
+                   phase1_only: bool = False, passes: int = 1):
+    """Run a full adversarial simulation, optionally with multiple passes."""
+    scenario = load_scenario(scenario_path)
+    metadata = parse_scenario_metadata(scenario)
+    calibration = metadata.get("calibration")
+    forum = metadata.get("forum")
+
+    # Scenario can override pass count
+    if metadata.get("max_rounds") and passes == 1:
+        passes = metadata["max_rounds"]
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    scenario_name = Path(scenario_path).stem
+    output_dir = OUTPUT_DIR / f"{scenario_name}_{timestamp}"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"Adversarial Simulation: {scenario_path}")
+    print(f"Model: {model}")
+    print(f"Agents: {len(PHASE1_AGENTS)} (Phase 1) + {len(PHASE2_AGENTS)} (Phase 2)")
+    print(f"Passes: {passes}")
+    if calibration:
+        print(f"Calibration: {calibration}")
+    if forum:
+        print(f"Forum: {forum}")
+    print(f"Output: {output_dir}")
+    print()
+
+    # ── Pass 1 (and potentially more) ──────────────────────────────
+    current_scenario = scenario
+    last_destroyer = None
+    last_refiner = None
+
+    for pass_num in range(1, passes + 1):
+        # Phase 1
+        phase1_results = run_phase1(
+            current_scenario, model, output_dir,
+            calibration=calibration, forum=forum, pass_num=pass_num,
+        )
+
+        successful = {k: v for k, v in phase1_results.items() if v.get("response")}
+        if not successful:
+            print(f"All Phase 1 agents failed on pass {pass_num}. Aborting.")
+            break
+
+        if phase1_only:
+            print(f"\n--phase1-only flag set. Results in {output_dir}")
+            _write_summary(output_dir, phase1_results, None, None,
+                           scenario_path, passes=pass_num, model=model)
+            return
+
+        # Phase 2
+        last_destroyer, last_refiner = run_phase2(
+            current_scenario, phase1_results, model, output_dir,
+            pass_num=pass_num,
+        )
+
+        # For multi-pass: feed the Refiner's revised argument back as the new scenario
+        if pass_num < passes:
+            print(f"\n{'─' * 60}")
+            print(f"Pass {pass_num} complete. Feeding revised argument into pass {pass_num + 1}...")
+            print(f"{'─' * 60}\n")
+
+            # Compose a new scenario with the refined argument
+            current_scenario = (
+                f"# Revised Argument (after pass {pass_num} adversarial review)\n\n"
+                f"## Original Context\n\n{scenario}\n\n"
+                f"## Revised Argument\n\n{last_refiner}\n\n"
+                f"## Instructions for This Pass\n\n"
+                f"This argument has already been through {pass_num} round(s) of "
+                f"adversarial review. Focus on NEW weaknesses, especially any "
+                f"introduced by the revisions. Don't re-flag issues that were "
+                f"already addressed unless the fix was inadequate."
+            )
+
+    # ── Write final summary ────────────────────────────────────────
+    _write_summary(output_dir, phase1_results, last_destroyer, last_refiner,
+                   scenario_path, passes=passes, model=model)
+
+    print(f"\nSimulation complete ({passes} pass{'es' if passes > 1 else ''}). "
+          f"All output in {output_dir}")
+    print(f"  Start with: phase2_refiner{'_pass' + str(passes) if passes > 1 else ''}.md")
+    print(f"  Deep dive:  phase2_destroyer{'_pass' + str(passes) if passes > 1 else ''}.md")
 
 
 def _write_summary(output_dir: Path, phase1_results: dict,
                    destroyer_response: str | None, refiner_response: str | None,
-                   scenario_path: str):
+                   scenario_path: str, passes: int = 1,
+                   model: str = DEFAULT_MODEL):
     """Write a summary index file."""
     summary_lines = [
         f"# Adversarial Simulation Summary",
         f"",
         f"- **Scenario:** {scenario_path}",
+        f"- **Model:** {model}",
+        f"- **Agents:** {', '.join(PHASE1_AGENTS)}",
+        f"- **Passes:** {passes}",
         f"- **Timestamp:** {datetime.now().isoformat()}",
         f"",
         f"## Phase 1: Parallel Attack Surface",
@@ -222,12 +395,24 @@ def _write_summary(output_dir: Path, phase1_results: dict,
             f"- **refiner:** {'OK' if refiner_response else 'FAILED'} → `phase2_refiner.md`",
         ])
 
+    if passes > 1:
+        summary_lines.extend([
+            f"",
+            f"## Multi-Pass",
+            f"",
+            f"Ran {passes} passes. Final output uses `_pass{passes}` suffix.",
+            f"Compare across passes to see how the argument evolved.",
+        ])
+
     summary_lines.extend([
         f"",
         f"## Reading Order",
         f"",
-        f"1. `phase2_refiner.md` — revised argument + opposition playbook",
-        f"2. `phase2_destroyer.md` — prioritized vulnerability report",
+    ])
+    suffix = f"_pass{passes}" if passes > 1 else ""
+    summary_lines.extend([
+        f"1. `phase2_refiner{suffix}.md` — revised argument + opposition playbook",
+        f"2. `phase2_destroyer{suffix}.md` — prioritized vulnerability report",
         f"3. `phase1_*.md` — individual agent analyses (for deep dives)",
     ])
 
@@ -239,10 +424,14 @@ if __name__ == "__main__":
         description="Adversarial argument simulation (two-phase architecture)"
     )
     parser.add_argument("scenario", help="Path to scenario markdown file")
-    parser.add_argument("--model", default="claude-sonnet-4-6",
-                        help="Claude model to use (default: claude-sonnet-4-6)")
+    parser.add_argument("--model", default=DEFAULT_MODEL,
+                        help=f"Claude model (default: {DEFAULT_MODEL})")
     parser.add_argument("--phase1-only", action="store_true",
                         help="Run only Phase 1 (parallel analysis), skip synthesis")
+    parser.add_argument("--passes", type=int, default=1,
+                        help="Number of full passes (default: 1; revised argument "
+                             "feeds back into Phase 1 for subsequent passes)")
     args = parser.parse_args()
 
-    run_simulation(args.scenario, model=args.model, phase1_only=args.phase1_only)
+    run_simulation(args.scenario, model=args.model,
+                   phase1_only=args.phase1_only, passes=args.passes)
