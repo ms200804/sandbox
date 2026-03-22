@@ -1,46 +1,36 @@
-# Hubbard/Goedinghaus — Motion to Vacate Attorney's Charging Lien
+# Hubbard v. Crow — Motion to Vacate Attorney's Charging Lien
 
 ## Forum
-WDTx (Western District of Texas, San Antonio Division)
-Referred to Magistrate Judge Chestney
-
-## Position
-Plaintiffs' counsel (Schmidt Law Corporation, sole counsel, pro hac vice) moving to vacate or modify/subordinate former counsel's charging lien.
+Western District of Texas, San Antonio Division (referred to Magistrate Judge Chestney)
 
 ## Adversary Calibration
 aggressive
 
-## Input Level
-draft_brief
-
 ## Context
-TVPA sex trafficking case. Plaintiffs (two trafficking victims) are represented by a solo practitioner after co-counsel withdrew. Former law firm (Balestriere Fariello, "BF") filed a charging lien claiming 37.5% contingency on any recovery. Court has already denied BF's motion to intervene, adopting Plaintiffs' analysis that BF is limited to quantum meruit under governing NY law (not contingency).
+Plaintiffs are TVPA sex trafficking victims represented by solo counsel (Schmidt Law Corporation, pro hac vice from California). Former counsel Balestriere PLLC filed a charging lien claiming 37.5% of any recovery. The Court has already determined BF is limited to quantum meruit under NY law (not contingency). BF's principal is personally bankrupt under Chapter 7. BF has refused to quantify its claim or produce time records for two years. The lien is blocking litigation funding (Legalist) and replacement co-counsel (Nematzadeh PLLC). Discovery deadline is July 23, 2026.
 
-Key facts:
-- BF's principal filed personal Chapter 7 bankruptcy; firm entities abandoned by trustee
-- BF has refused to quantify its quantum meruit claim for 2 years — no time records produced
-- Litigation funder (Legalist) and replacement co-counsel (Nematzadeh PLLC) are available but won't engage while the unquantified lien sits in first position
-- Solo counsel is self-funding ~$20K+ in discovery platform costs
-- Discovery deadline July 23, 2026; dispositive motions August 24, 2026
-- TVPA provides mandatory attorney fees to prevailing plaintiff (18 USC § 1595(a))
-
-The motion argues three grounds:
-1. Lien is facially defective — claims a contingency interest the Court already ruled BF doesn't have
-2. Lien is obstructing prosecution — blocking funding and co-counsel
-3. Alternative: modify to strike the 37.5%, require substantiation within 30 days, subordinate to funder/co-counsel
-
-## Brief
-brief: briefs/hubbard_vacate_lien_v3.md
+We are moving to vacate the lien or in the alternative modify and subordinate it.
 
 ## Key Authorities
-- *In re Cooperman*, 83 N.Y.2d 465 (1994) — discharged attorney limited to quantum meruit
-- *In re Thelen LLP*, 24 N.Y.3d 16 (2014) — no property interest in future fees
-- *Banque Indosuez v. Sopwith Holdings*, 98 N.Y.2d 34 (2002) — lien priority depends on equities
-- *Butler, Fitzgerald & Potter v. Sequa Corp.*, 250 F.3d 171 (2d Cir. 2001) — litigation impasse from discharged attorney's lien
-- *Schneider, Kleinick v. City of New York*, 302 A.D.2d 183 (1st Dept. 2002) — lien is equitable, subject to forfeiture
-- *Villanueva v. CNA Ins. Cos.*, 868 F.2d 684 (5th Cir. 1989) — federal court authority over lien priority
-- *Chambers v. NASCO*, 501 U.S. 32 (1991) — inherent authority
-- *Gaines v. Dixie Carriers*, 434 F.2d 52 (5th Cir. 1970) — limited intervention doctrine
+- Chambers v. NASCO, Inc., 501 U.S. 32 (1991) — inherent authority
+- In re Cooperman, 83 N.Y.2d 465 (1994) — discharged attorney limited to quantum meruit
+- Banque Indosuez v. Sopwith Holdings Corp., 98 N.Y.2d 34 (2002) — § 475 lien priority depends on equities
+- Butler, Fitzgerald & Potter v. Sequa Corp., 250 F.3d 171 (2d Cir. 2001) — litigation impasse from lien
+- Villanueva v. CNA Ins. Cos., 868 F.2d 684 (5th Cir. 1989) — federal court authority over lien priority
+- Schneider, Kleinick v. City of New York, 302 A.D.2d 183 (1st Dept. 2002) — equitable limitations on § 475 lien
 
-## Max Rounds
-1
+## Agent Instructions
+Key procedural posture points for all agents:
+- This is a motion before a Magistrate Judge (pretrial referral only, not full consent referral).
+- NY law governs the fee agreement (BF conceded this, Court adopted it in Dkt. 329).
+- The Court has ALREADY ruled that BF has no contingency interest and is limited to quantum meruit (Dkt. 329 adopting Dkt. 327). This is law of the case.
+- BF's principal is in Chapter 7 bankruptcy. The firm entities were abandoned by the trustee.
+- The motion is about the lien itself, not the underlying fee dispute.
+- Plaintiffs are TVPA victims — trafficking cases carry mandatory attorney fees under § 1595(a).
+- Current counsel is pro hac vice from California, solo practitioner.
+- The case is in WDTx but relies heavily on NY lien law (§ 475) and Second Circuit authority on discharged-attorney rights.
+
+For Opposing Counsel: You represent BF (the former firm). Your best arguments are about protecting the lien as a property right, questioning the court's authority to vacate absent an adversary proceeding, and arguing that subordination rather than vacatur is the proper remedy.
+
+## Brief
+brief: ../../../incoming/hubbard_vacate_lien_v3.md

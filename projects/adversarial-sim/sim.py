@@ -212,10 +212,11 @@ def run_claude(system_prompt: str, user_message: str,
     full_prompt = f"{system_prompt}\n\n---\n\n{user_message}"
 
     result = subprocess.run(
-        ["claude", "--print", "--model", model, full_prompt],
+        ["claude", "--print", "--model", model, "-"],
+        input=full_prompt,
         capture_output=True,
         text=True,
-        timeout=600,  # 10 min per agent (Opus can be slower)
+        timeout=900,  # 15 min per agent (Opus on large prompts)
     )
 
     if result.returncode != 0:
