@@ -17,10 +17,29 @@ SANDBOX_ROOT = Path(__file__).parent.parent.parent
 ADVERSARIAL_SIM_DIR = SANDBOX_ROOT / "projects" / "adversarial-sim"
 CASE_RESEARCH_DIR = SANDBOX_ROOT / "projects" / "case-research"
 
-# Add case-research to path so we can import library
+# Add case-research to path so we can import library and CL client
 sys.path.insert(0, str(CASE_RESEARCH_DIR))
 import library as research_library
 from citation_extractor import extract_citations as _parse_citations, extract_from_file, auto_categorize
+
+# CourtListener client — lazy init so .env is loaded first
+from cl_client import CourtListenerClient
+_cl_client = None
+CL_AVAILABLE = False
+
+
+def _get_cl_client():
+    """Lazy-init the CL client (called after load_dotenv)."""
+    global _cl_client, CL_AVAILABLE
+    if _cl_client is not None:
+        return _cl_client
+    try:
+        _cl_client = CourtListenerClient()
+        CL_AVAILABLE = True
+        return _cl_client
+    except (ValueError, Exception):
+        CL_AVAILABLE = False
+        return None
 
 # ── Tool Schemas (Claude API format) ────────────────────────────────
 
@@ -517,58 +536,116 @@ def _run_adversarial_sim(input_data: dict, task_mgr,
 
 def _search_cases(input_data: dict) -> str:
     """Search CourtListener for cases."""
-    # TODO: Implement with actual CourtListener API
+    cl = _get_cl_client()
+    if not cl:
+        return json.dumps({"error": "CourtListener not configured. Set COURTLISTENER_TOKEN in .env"})
+
     query = input_data.get("query", "")
     court = input_data.get("court")
     date_after = input_data.get("date_after")
     limit = input_data.get("limit", 10)
 
-    return json.dumps({
-        "status": "not_implemented",
-        "message": (
-            f"CourtListener search not yet implemented. "
-            f"Query: '{query}', Court: {court}, After: {date_after}, Limit: {limit}. "
-            f"Need to implement cl_client.py with httpx first."
-        ),
-    })
+    try:
+        results = cl.search_opinions(query, court=court, date_after=date_after, limit=limit)
+        # Pull text previews for top results so the bot can discuss holdings
+        for r in results[:5]:
+            if r.get("opinion_id"):
+                try:
+                    text = cl.get_opinion_text(r["opinion_id"])
+                    if text:
+                        r["text_preview"] = text[:3000]
+                except Exception:
+                    pass
+        return json.dumps({"query": query, "count": len(results), "results": results}, indent=2)
+    except Exception as e:
+        return json.dumps({"error": f"Search failed: {e}"})
 
 
 def _find_similar_cases(input_data: dict) -> str:
-    """Find cases similar to a reference case."""
-    # TODO: Implement via CL citation network
+    """Find cases similar to a reference case via citation network."""
+    cl = _get_cl_client()
+    if not cl:
+        return json.dumps({"error": "CourtListener not configured. Set COURTLISTENER_TOKEN in .env"})
+
     ref = input_data.get("reference_case", "")
-    aspect = input_data.get("aspect", "all")
-    court = input_data.get("court")
     limit = input_data.get("limit", 10)
 
-    return json.dumps({
-        "status": "not_implemented",
-        "message": (
-            f"Find-similar not yet implemented. "
-            f"Reference: '{ref}', Aspect: {aspect}, Court: {court}, Limit: {limit}. "
-            f"Will use CL citation network: find opinions that cite the same authorities "
-            f"as the reference case, filter by court/date, and rank by citation overlap."
-        ),
-    })
+    try:
+        # First, resolve the reference to a CL opinion ID
+        ref_opinion = cl.citation_lookup(ref)
+        if not ref_opinion:
+            return json.dumps({"error": f"Could not find reference case: {ref}"})
+
+        # Find opinions that cite this case (forward citations = similar topic)
+        citing = cl.citing_opinions(ref_opinion.id, limit=limit)
+        return json.dumps({
+            "reference": {"id": ref_opinion.id, "case_name": ref_opinion.case_name, "citation": ref_opinion.citation},
+            "similar_count": len(citing),
+            "similar": citing,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"error": f"Find similar failed: {e}"})
 
 
 def _lookup_citation(input_data: dict) -> str:
     """Look up a case by citation."""
-    # TODO: Implement
-    return json.dumps({
-        "status": "not_implemented",
-        "message": f"Citation lookup not yet implemented. Citation: {input_data.get('citation')}",
-    })
+    cl = _get_cl_client()
+    if not cl:
+        return json.dumps({"error": "CourtListener not configured. Set COURTLISTENER_TOKEN in .env"})
+
+    citation = input_data.get("citation", "")
+    try:
+        opinion = cl.citation_lookup(citation)
+        if not opinion:
+            return json.dumps({"error": f"No opinion found for citation: {citation}"})
+        # Truncate text for Slack readability
+        text_preview = opinion.text[:2000] + "..." if len(opinion.text) > 2000 else opinion.text
+        return json.dumps({
+            "id": opinion.id,
+            "case_name": opinion.case_name,
+            "citation": opinion.citation,
+            "court": opinion.court,
+            "date_filed": opinion.date_filed,
+            "url": opinion.url,
+            "text_preview": text_preview,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"error": f"Lookup failed: {e}"})
 
 
 def _shepardize(input_data: dict) -> str:
-    """Check citations for negative treatment."""
-    # TODO: Implement
+    """Check citations for negative treatment via forward citation analysis."""
+    cl = _get_cl_client()
+    if not cl:
+        return json.dumps({"error": "CourtListener not configured. Set COURTLISTENER_TOKEN in .env"})
+
     citations = input_data.get("citations", [])
-    return json.dumps({
-        "status": "not_implemented",
-        "message": f"Shepardize not yet implemented. Citations: {citations}",
-    })
+    if not citations:
+        return "No citations provided."
+
+    results = []
+    for cite_str in citations:
+        try:
+            opinion = cl.citation_lookup(cite_str)
+            if not opinion:
+                results.append({"citation": cite_str, "status": "not_found"})
+                continue
+
+            # Get forward citations (who cites this case)
+            citing = cl.citing_opinions(opinion.id, limit=20)
+            results.append({
+                "citation": cite_str,
+                "case_name": opinion.case_name,
+                "cl_id": opinion.id,
+                "forward_citations": len(citing),
+                "recent_citing": citing[:5],
+                "note": "This is forward citation count, not Shepard's treatment status. "
+                        "CL does not provide reversed/distinguished indicators.",
+            })
+        except Exception as e:
+            results.append({"citation": cite_str, "error": str(e)})
+
+    return json.dumps({"results": results}, indent=2)
 
 
 def _batch_lookup(input_data: dict) -> str:
@@ -581,20 +658,37 @@ def _batch_lookup(input_data: dict) -> str:
     if not citations:
         return "No citations provided."
 
-    # TODO: Resolve each citation against CL
-    # For now, parse and return structured data
+    cl = _get_cl_client()
     results = []
     for cite_str in citations:
+        # Try CL resolution first
+        if cl:
+            try:
+                opinion = cl.citation_lookup(cite_str)
+                if opinion:
+                    results.append({
+                        "input": cite_str,
+                        "parsed": opinion.citation or cite_str,
+                        "case_name": opinion.case_name,
+                        "court": opinion.court,
+                        "date_filed": opinion.date_filed,
+                        "url": opinion.url,
+                        "resolved": True,
+                    })
+                    continue
+            except Exception:
+                pass
+
+        # Fallback to parsing only
         parsed = _parse_citations(cite_str)
         if parsed:
             cit = parsed[0]
             results.append({
                 "input": cite_str,
                 "parsed": cit.standard_cite,
-                "case_name": cit.case_name or "(needs CL lookup)",
+                "case_name": cit.case_name or "(not resolved)",
                 "year": cit.year,
                 "resolved": False,
-                "status": "CL client not yet implemented — citation parsed but not resolved",
             })
         else:
             results.append({
@@ -603,13 +697,15 @@ def _batch_lookup(input_data: dict) -> str:
                 "status": "Could not parse citation format",
             })
 
+    resolved_count = sum(1 for r in results if r.get("resolved"))
     output = {
         "total": len(citations),
         "parsed": sum(1 for r in results if r.get("parsed")),
-        "resolved": 0,  # TODO: will be non-zero once CL client works
+        "resolved": resolved_count,
         "results": results,
-        "note": "CL client not yet implemented. Citations parsed but full text not pulled.",
     }
+    if not cl:
+        output["note"] = "COURTLISTENER_TOKEN not set — citations parsed but not resolved against CL."
 
     if save and category:
         research_library.save_research(

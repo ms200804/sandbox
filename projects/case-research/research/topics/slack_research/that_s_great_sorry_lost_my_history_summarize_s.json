@@ -1,0 +1,77 @@
+{
+  "category": "slack_research",
+  "topic": "that_s_great_sorry_lost_my_history_summarize_s",
+  "query": "that's great! sorry lost my history,  summarize  state of  caselaw   again?",
+  "jurisdiction": "",
+  "saved_at": "2026-03-21T22:41:22.177687",
+  "result_count": 5,
+  "results": {
+    "results": [
+      {
+        "id": 10368212,
+        "opinion_id": 10834800,
+        "case_name": "Johnny Partain v. State of Texas",
+        "court": "Texas Court of Appeals, 15th District",
+        "court_id": "txctapp15",
+        "date_filed": "2025-03-25",
+        "citation": "",
+        "cite_count": 0,
+        "snippet": "",
+        "judge": "",
+        "url": "https://www.courtlistener.com/opinion/10368212/johnny-partain-v-state-of-texas/"
+      },
+      {
+        "id": 4266333,
+        "opinion_id": 4043594,
+        "case_name": "Turner, Albert James",
+        "court": "Court of Appeals of Texas",
+        "court_id": "texapp",
+        "date_filed": "2015-01-21",
+        "citation": "",
+        "cite_count": 0,
+        "snippet": "",
+        "judge": "",
+        "url": "https://www.courtlistener.com/opinion/4266333/turner-albert-james/"
+      },
+      {
+        "id": 4296764,
+        "opinion_id": 4074025,
+        "case_name": "Arnold & Itkin, L.L.P., Beck Redden LLP, Albritton Law Firm, Kurt Arnold, Cory Itkin, Jason Itkin, Russell Post, Fields Alexander, Jas Brar and Eric Albritton v. Maria Santos Lopez Dominguez, Individually and as Next Friend of Karen Marien Andrade Lopez",
+        "court": "Texas Court of Appeals, 1st District (Houston)",
+        "court_id": "txctapp1",
+        "date_filed": "2015-12-03",
+        "citation": "",
+        "cite_count": 0,
+        "snippet": "",
+        "judge": "",
+        "url": "https://www.courtlistener.com/opinion/4296764/arnold-itkin-llp-beck-redden-llp-albritton-law-firm-kurt-arnold/"
+      },
+      {
+        "id": 4290154,
+        "opinion_id": 4067415,
+        "case_name": "in Re Allen J. Jones",
+        "court": "Texas Court of Appeals, 4th District (San Antonio)",
+        "court_id": "txctapp4",
+        "date_filed": "2015-10-19",
+        "citation": "",
+        "cite_count": 0,
+        "snippet": "",
+        "judge": "",
+        "url": "https://www.courtlistener.com/opinion/4290154/in-re-allen-j-jones/"
+      },
+      {
+        "id": 4299753,
+        "opinion_id": 4077014,
+        "case_name": "Select Building Systems, Inc. and Tri-Bar Ranch Company, Ltd. v. Robertson Electric, Inc.",
+        "court": "Texas Court of Appeals, 4th District (San Antonio)",
+        "court_id": "txctapp4",
+        "date_filed": "2015-09-11",
+        "citation": "",
+        "cite_count": 0,
+        "snippet": "",
+        "judge": "",
+        "url": "https://www.courtlistener.com/opinion/4299753/select-building-systems-inc-and-tri-bar-ranch-company-ltd-v-robertson/"
+      }
+    ]
+  }
+}

@@ -1,5 +1,51 @@
 {
   "description": "Index of researched topics. Auto-generated and updated by the research agent.",
   "stale_after_days": 90,
-  "topics": {}
+  "topics": {
+    "tvpa/attorney_fees_standard_of_review_ca2": {
+      "category": "tvpa",
+      "topic": "attorney_fees_standard_of_review_ca2",
+      "file": "topics/tvpa/attorney_fees_standard_of_review_ca2.json",
+      "query": "TVPA attorney fees standard of review abuse of discretion ca2",
+      "jurisdiction": "ca2",
+      "saved_at": "2026-03-21T21:40:57.864200",
+      "result_count": 3
+    },
+    "section_1983/1988_attorney_fees_standard_of_review_ca2": {
+      "category": "section_1983",
+      "topic": "1988_attorney_fees_standard_of_review_ca2",
+      "file": "topics/section_1983/1988_attorney_fees_standard_of_review_ca2.json",
+      "query": "section 1988 attorney fees standard of review abuse of discretion ca2",
+      "jurisdiction": "ca2",
+      "saved_at": "2026-03-21T21:40:57.864529",
+      "result_count": 3
+    },
+    "slack_research/thanks_claude_tell_more_arbor_hill": {
+      "category": "slack_research",
+      "topic": "thanks_claude_tell_more_arbor_hill",
+      "file": "topics/slack_research/thanks_claude_tell_more_arbor_hill.json",
+      "query": "thanks claude,  tell  more  arbor hill?",
+      "jurisdiction": "",
+      "saved_at": "2026-03-21T22:37:51.622257",
+      "result_count": 1
+    },
+    "slack_research/that_s_great_sorry_lost_my_history_summarize_s": {
+      "category": "slack_research",
+      "topic": "that_s_great_sorry_lost_my_history_summarize_s",
+      "file": "topics/slack_research/that_s_great_sorry_lost_my_history_summarize_s.json",
+      "query": "that's great! sorry lost my history,  summarize  state of  caselaw   again?",
+      "jurisdiction": "",
+      "saved_at": "2026-03-21T22:41:22.177687",
+      "result_count": 5
+    },
+    "slack_research/case_standard_of_review_second_circuit_attorn": {
+      "category": "slack_research",
+      "topic": "case_standard_of_review_second_circuit_attorn",
+      "file": "topics/slack_research/case_standard_of_review_second_circuit_attorn.json",
+      "query": "case   standard of review   second circuit  attorney fee awards under  tvpa?",
+      "jurisdiction": "",
+      "saved_at": "2026-03-21T23:11:14.685747",
+      "result_count": 3
+    }
+  }
 }

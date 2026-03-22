@@ -1,0 +1,51 @@
+{
+  "category": "slack_research",
+  "topic": "case_standard_of_review_second_circuit_attorn",
+  "query": "case   standard of review   second circuit  attorney fee awards under  tvpa?",
+  "jurisdiction": "",
+  "saved_at": "2026-03-21T23:11:14.685747",
+  "result_count": 3,
+  "results": {
+    "results": [
+      {
+        "id": 4690979,
+        "opinion_id": 4468232,
+        "case_name": "Vera v. Banco Bilbao Vizcaya Argentaria, S.A.",
+        "court": "Court of Appeals for the Second Circuit",
+        "court_id": "ca2",
+        "date_filed": "2019-12-30",
+        "citation": "946 F.3d 120",
+        "cite_count": 43,
+        "snippet": "",
+        "judge": "",
+        "url": "https://www.courtlistener.com/opinion/4690979/vera-v-banco-bilbao-vizcaya-argentaria-sa/"
+      },
+      {
+        "id": 10740291,
+        "opinion_id": 11206876,
+        "case_name": "Moore v. Rubin",
+        "court": "Court of Appeals for the Second Circuit",
+        "court_id": "ca2",
+        "date_filed": "2025-11-21",
+        "citation": "",
+        "cite_count": 0,
+        "snippet": "",
+        "judge": "",
+        "url": "https://www.courtlistener.com/opinion/10740291/moore-v-rubin/"
+      },
+      {
+        "id": 175476,
+        "opinion_id": 175476,
+        "case_name": "Kiobel v. Royal Dutch Petroleum Co.",
+        "court": "Court of Appeals for the Second Circuit",
+        "court_id": "ca2",
+        "date_filed": "2010-09-17",
+        "citation": "621 F.3d 111",
+        "cite_count": 414,
+        "snippet": "",
+        "judge": "Jacobs, Leval, Cabranes",
+        "url": "https://www.courtlistener.com/opinion/175476/kiobel-v-royal-dutch-petroleum-co/"
+      }
+    ]
+  }
+}

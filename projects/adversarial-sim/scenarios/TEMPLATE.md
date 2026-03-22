@@ -1,30 +1,28 @@
-# [Scenario Title]
+# [Title — e.g., "MTD Opposition: Unconscionability of Arbitration Clause"]
 
 ## Forum
-[Court — e.g., SDNY, 9th Cir., CDCA, WDTx]
-
-## Position
-[Who you represent and what you're arguing]
+[Court, e.g., SDNY, CDCA, 9th Cir.]
 
 ## Adversary Calibration
-[standard | aggressive | elite]
+[standard / aggressive / elite]
 
 ## Context
-[Facts, procedural posture, key issues. Be specific — the agents work
-with what you give them.]
+[Describe the argument. Can be anything from a one-line legal question to a full
+factual and procedural background. Include:
+- What side you're on
+- Procedural posture (MTD, MSJ, opposition, etc.)
+- Key facts
+- Legal theories
+]
+
+## Key Authorities
+- [Case citations you're relying on]
+- [Statutes]
 
 ## Brief
-[OPTIONAL — reference an external file with the full draft brief text.
-The orchestrator will inline it automatically.]
+[Optional — reference an external file:]
+brief: path/to/draft.md
 
-brief: path/to/draft_brief.md
-
-## Key Authorities (Starting Point)
-[Cases and statutes — gives agents a starting point. They may identify
-additional authorities on their own.]
-- *Case Name*, Citation (Year) — short note on relevance
-
-## Max Rounds
-[Number of passes. Default: 1. Set higher if you want the revised
-argument fed back through Phase 1 for additional pressure-testing.]
-1
+## Agent Instructions
+[Optional — custom instructions for this scenario's agents. E.g., "Focus on
+California state law" or "Assume the arbitration clause is in a consumer contract."]
