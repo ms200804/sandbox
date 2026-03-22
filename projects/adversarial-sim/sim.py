@@ -4,7 +4,7 @@ Adversarial Simulation Orchestrator
 
 Two-phase architecture for stress-testing legal arguments:
   Phase 1: Six parallel agents analyze independently (no cross-talk)
-  Phase 2: Destroyer synthesizes + Refiner revises (sequential)
+  Phase 2: Attacker synthesizes + Reviser revises (sequential)
   Optional: Multi-pass (feed revised argument back through Phase 1)
 
 Usage:
@@ -29,16 +29,16 @@ OUTPUT_DIR = Path(__file__).parent / "output"
 
 # Phase 1 agents — run in parallel, no cross-talk
 PHASE1_AGENTS = [
-    "hostile_oc",
-    "skeptical_judge",
-    "appellate_panel",
-    "economic_realist",
-    "procedural_tactician",
-    "record_auditor",
+    "opposing_counsel",
+    "judge",
+    "appellate",
+    "strategist",
+    "procedural",
+    "evidence",
 ]
 
 # Phase 2 agents — run sequentially
-PHASE2_AGENTS = ["destroyer", "refiner"]
+PHASE2_AGENTS = ["attacker", "reviser"]
 
 # Default model — Opus across the board, no corner-cutting
 DEFAULT_MODEL = "claude-opus-4-6"
@@ -248,7 +248,7 @@ def run_phase1_agent(role: str, scenario: str, model: str,
     if agent_instructions:
         instructions.append(agent_instructions)
 
-    if calibration and role == "hostile_oc":
+    if calibration and role == "opposing_counsel":
         instructions.append(
             f"Calibration level: {calibration}. Adjust your attack intensity accordingly."
         )
@@ -323,7 +323,7 @@ def run_phase1(scenario: str, model: str, output_dir: Path,
 
 def run_phase2(scenario: str, phase1_results: dict, model: str,
                output_dir: Path, pass_num: int = 1) -> tuple[str, str]:
-    """Run Phase 2 (Destroyer + Refiner). Returns (destroyer, refiner) responses."""
+    """Run Phase 2 (Attacker + Reviser). Returns (attacker, reviser) responses."""
     pass_label = f" (pass {pass_num})" if pass_num > 1 else ""
     suffix = f"_pass{pass_num}" if pass_num > 1 else ""
 
@@ -331,42 +331,42 @@ def run_phase2(scenario: str, phase1_results: dict, model: str,
 
     successful = {k: v for k, v in phase1_results.items() if v.get("response")}
 
-    # Compile Phase 1 output for Destroyer
+    # Compile Phase 1 output for Attacker
     phase1_compiled = "\n\n---\n\n".join(
         f"## {role.replace('_', ' ').title()} Analysis\n\n{r['response']}"
         for role, r in sorted(successful.items())
     )
 
-    # Destroyer: synthesize and prioritize
-    print("  [destroyer] Starting...")
-    destroyer_prompt = load_prompt("destroyer")
-    destroyer_msg = (
+    # Attacker: synthesize and prioritize
+    print("  [attacker] Starting...")
+    attacker_prompt = load_prompt("attacker")
+    attacker_msg = (
         f"## Original Scenario\n\n{scenario}\n\n"
         f"## Phase 1 Analyses ({len(successful)} agents)\n\n{phase1_compiled}\n\n"
         f"## Instructions\n\n"
         f"Synthesize all Phase 1 analyses into a unified, prioritized "
         f"vulnerability report. Follow your role instructions exactly."
     )
-    destroyer_response = run_claude(destroyer_prompt, destroyer_msg, model)
-    print(f"  [destroyer] Done ({len(destroyer_response)} chars)")
-    (output_dir / f"phase2_destroyer{suffix}.md").write_text(destroyer_response)
+    attacker_response = run_claude(attacker_prompt, attacker_msg, model)
+    print(f"  [attacker] Done ({len(attacker_response)} chars)")
+    (output_dir / f"phase2_attacker{suffix}.md").write_text(attacker_response)
 
-    # Refiner: revise the argument
-    print("  [refiner] Starting...")
-    refiner_prompt = load_prompt("refiner")
-    refiner_msg = (
+    # Reviser: revise the argument
+    print("  [reviser] Starting...")
+    reviser_prompt = load_prompt("reviser")
+    reviser_msg = (
         f"## Original Scenario and Argument\n\n{scenario}\n\n"
-        f"## Vulnerability Report (from Destroyer)\n\n{destroyer_response}\n\n"
+        f"## Vulnerability Report (from Attacker)\n\n{attacker_response}\n\n"
         f"## Instructions\n\n"
         f"Revise the argument to address the identified vulnerabilities. "
         f"Produce the revised argument, unfixable issues, and opposition "
         f"playbook. Follow your role instructions exactly."
     )
-    refiner_response = run_claude(refiner_prompt, refiner_msg, model)
-    print(f"  [refiner] Done ({len(refiner_response)} chars)")
-    (output_dir / f"phase2_refiner{suffix}.md").write_text(refiner_response)
+    reviser_response = run_claude(reviser_prompt, reviser_msg, model)
+    print(f"  [reviser] Done ({len(reviser_response)} chars)")
+    (output_dir / f"phase2_reviser{suffix}.md").write_text(reviser_response)
 
-    return destroyer_response, refiner_response
+    return attacker_response, reviser_response
 
 
 def run_simulation(scenario_path: str, model: str = DEFAULT_MODEL,
@@ -404,8 +404,8 @@ def run_simulation(scenario_path: str, model: str = DEFAULT_MODEL,
 
     # ── Pass 1 (and potentially more) ──────────────────────────────
     current_scenario = scenario
-    last_destroyer = None
-    last_refiner = None
+    last_attacker = None
+    last_reviser = None
 
     for pass_num in range(1, passes + 1):
         # Phase 1
@@ -428,12 +428,12 @@ def run_simulation(scenario_path: str, model: str = DEFAULT_MODEL,
             return
 
         # Phase 2
-        last_destroyer, last_refiner = run_phase2(
+        last_attacker, last_reviser = run_phase2(
             current_scenario, phase1_results, model, output_dir,
             pass_num=pass_num,
         )
 
-        # For multi-pass: feed the Refiner's revised argument back as the new scenario
+        # For multi-pass: feed the Reviser's revised argument back as the new scenario
         if pass_num < passes:
             print(f"\n{'─' * 60}")
             print(f"Pass {pass_num} complete. Feeding revised argument into pass {pass_num + 1}...")
@@ -443,7 +443,7 @@ def run_simulation(scenario_path: str, model: str = DEFAULT_MODEL,
             current_scenario = (
                 f"# Revised Argument (after pass {pass_num} adversarial review)\n\n"
                 f"## Original Context\n\n{scenario}\n\n"
-                f"## Revised Argument\n\n{last_refiner}\n\n"
+                f"## Revised Argument\n\n{last_reviser}\n\n"
                 f"## Instructions for This Pass\n\n"
                 f"This argument has already been through {pass_num} round(s) of "
                 f"adversarial review. Focus on NEW weaknesses, especially any "
@@ -452,17 +452,17 @@ def run_simulation(scenario_path: str, model: str = DEFAULT_MODEL,
             )
 
     # ── Write final summary ────────────────────────────────────────
-    _write_summary(output_dir, phase1_results, last_destroyer, last_refiner,
+    _write_summary(output_dir, phase1_results, last_attacker, last_reviser,
                    scenario_path, passes=passes, model=model)
 
     print(f"\nSimulation complete ({passes} pass{'es' if passes > 1 else ''}). "
           f"All output in {output_dir}")
-    print(f"  Start with: phase2_refiner{'_pass' + str(passes) if passes > 1 else ''}.md")
-    print(f"  Deep dive:  phase2_destroyer{'_pass' + str(passes) if passes > 1 else ''}.md")
+    print(f"  Start with: phase2_reviser{'_pass' + str(passes) if passes > 1 else ''}.md")
+    print(f"  Deep dive:  phase2_attacker{'_pass' + str(passes) if passes > 1 else ''}.md")
 
 
 def _write_summary(output_dir: Path, phase1_results: dict,
-                   destroyer_response: str | None, refiner_response: str | None,
+                   attacker_response: str | None, reviser_response: str | None,
                    scenario_path: str, passes: int = 1,
                    model: str = DEFAULT_MODEL):
     """Write a summary index file."""
@@ -483,13 +483,13 @@ def _write_summary(output_dir: Path, phase1_results: dict,
         status = "OK" if r.get("response") else f"FAILED: {r.get('error', 'unknown')}"
         summary_lines.append(f"- **{role}:** {status} → `phase1_{role}.md`")
 
-    if destroyer_response:
+    if attacker_response:
         summary_lines.extend([
             f"",
             f"## Phase 2: Synthesis",
             f"",
-            f"- **destroyer:** OK → `phase2_destroyer.md`",
-            f"- **refiner:** {'OK' if refiner_response else 'FAILED'} → `phase2_refiner.md`",
+            f"- **attacker:** OK → `phase2_attacker.md`",
+            f"- **reviser:** {'OK' if reviser_response else 'FAILED'} → `phase2_reviser.md`",
         ])
 
     if passes > 1:
@@ -508,8 +508,8 @@ def _write_summary(output_dir: Path, phase1_results: dict,
     ])
     suffix = f"_pass{passes}" if passes > 1 else ""
     summary_lines.extend([
-        f"1. `phase2_refiner{suffix}.md` — revised argument + opposition playbook",
-        f"2. `phase2_destroyer{suffix}.md` — prioritized vulnerability report",
+        f"1. `phase2_reviser{suffix}.md` — revised argument + opposition playbook",
+        f"2. `phase2_attacker{suffix}.md` — prioritized vulnerability report",
         f"3. `phase1_*.md` — individual agent analyses (for deep dives)",
     ])
 

@@ -11,12 +11,12 @@ Six agents analyze the argument simultaneously. They never see each other's outp
 
 | Agent | Lens | Finds |
 |---|---|---|
-| **Hostile OC** | "How do I win this motion?" | Actual attacks opposing counsel will make — case distinctions, procedural traps, factual gaps. Calibration: standard / aggressive / elite. |
-| **Skeptical Judge** | "Why should I grant this?" | Missing elements, conclusory assertions, standard-of-review problems, threshold issues (standing, jurisdiction, ripeness) |
-| **Appellate Panel** | "Is the doctrine clean?" | Doctrinal errors, circuit splits, sloppy framing, preservation issues, standard of review |
-| **Economic Realist** | "What are the real incentives?" | Settlement leverage, cost/benefit, remedy collectability, insurance angles, policy arguments |
-| **Procedural Tactician** | "What happens next?" | Timing, sequencing, waiver risks, preservation for appeal, opponent's procedural options, discovery needs |
-| **Record Auditor** | "Can you prove this?" | Evidentiary gaps, unsupported factual assertions, authentication issues, pleading sufficiency (Iqbal/Twombly), MSJ readiness |
+| **Opposing Counsel** | "How do I win this motion?" | Actual attacks opposing counsel will make — case distinctions, procedural traps, factual gaps. Calibration: standard / aggressive / elite. |
+| **Judge** | "Why should I grant this?" | Missing elements, conclusory assertions, standard-of-review problems, threshold issues (standing, jurisdiction, ripeness) |
+| **Appellate** | "Is the doctrine clean?" | Doctrinal errors, circuit splits, sloppy framing, preservation issues, standard of review |
+| **Strategist** | "What are the real incentives?" | Settlement leverage, cost/benefit, remedy collectability, insurance angles, policy arguments |
+| **Procedural** | "What happens next?" | Timing, sequencing, waiver risks, preservation for appeal, opponent's procedural options, discovery needs |
+| **Evidence** | "Can you prove this?" | Evidentiary gaps, unsupported factual assertions, authentication issues, pleading sufficiency (Iqbal/Twombly), MSJ readiness |
 
 Each outputs: top 3 weaknesses, strongest single attack vector, and role-specific analysis.
 
@@ -24,26 +24,26 @@ Each outputs: top 3 weaknesses, strongest single attack vector, and role-specifi
 
 | Agent | Job |
 |---|---|
-| **Destroyer** | Reads ALL Phase 1 output. Ranks weaknesses by severity (fatal/serious/minor). Identifies compound weaknesses (same issue flagged by multiple agents). Produces prioritized vulnerability report with triage recommendations. |
-| **Refiner** | Takes original argument + Destroyer's report. Revises to preempt top threats. Flags unfixable issues. Produces opposition playbook ("They'll argue X → Our response Y" with strength ratings). |
+| **Attacker** | Reads ALL Phase 1 output. Ranks weaknesses by severity (fatal/serious/minor). Identifies compound weaknesses (same issue flagged by multiple agents). Produces prioritized vulnerability report with triage recommendations. |
+| **Reviser** | Takes original argument + Attacker's report. Revises to preempt top threats. Flags unfixable issues. Produces opposition playbook ("They'll argue X → Our response Y" with strength ratings). |
 
 ### Flow
 ```
 Input: argument + case context + forum
   │
-  ├─→ [Hostile OC]            ─┐
-  ├─→ [Skeptical Judge]        ─┤
-  ├─→ [Appellate Panel]        ─┤  Phase 1 (parallel, 6 agents)
-  ├─→ [Economic Realist]       ─┤
-  ├─→ [Procedural Tactician]   ─┤
-  ├─→ [Record Auditor]         ─┘
+  ├─→ [Opposing Counsel]       ─┐
+  ├─→ [Judge]                  ─┤
+  ├─→ [Appellate]              ─┤  Phase 1 (parallel, 6 agents)
+  ├─→ [Strategist]             ─┤
+  ├─→ [Procedural]             ─┤
+  ├─→ [Evidence]               ─┘
   │                              │
   │         ┌────────────────────┘
   │         ▼
-  ├─→ [Destroyer]  → vulnerability report     Phase 2 (sequential)
+  ├─→ [Attacker]   → vulnerability report     Phase 2 (sequential)
   │         │
   │         ▼
-  └─→ [Refiner]   → revised argument + opposition playbook
+  └─→ [Reviser]   → revised argument + opposition playbook
            │
            └─→ (optional: feed back into Phase 1 for another pass)
 ```
@@ -117,19 +117,19 @@ See `scenarios/TEMPLATE.md` for the full template.
 ```
 output/example_20260321_143022/
 ├── summary.md                      # Index with reading order
-├── phase1_hostile_oc.md            # Independent analyses
-├── phase1_skeptical_judge.md
-├── phase1_appellate_panel.md
-├── phase1_economic_realist.md
-├── phase1_procedural_tactician.md
-├── phase1_record_auditor.md
-├── phase2_destroyer.md             # Synthesized vulnerability report
-└── phase2_refiner.md               # Revised argument + opposition playbook
+├── phase1_opposing_counsel.md      # Independent analyses
+├── phase1_judge.md
+├── phase1_appellate.md
+├── phase1_strategist.md
+├── phase1_procedural.md
+├── phase1_evidence.md
+├── phase2_attacker.md              # Synthesized vulnerability report
+└── phase2_reviser.md               # Revised argument + opposition playbook
 ```
 
 For multi-pass runs, subsequent passes use `_pass2`, `_pass3` suffixes.
 
-**Reading order:** `phase2_refiner.md` → `phase2_destroyer.md` → individual Phase 1 files.
+**Reading order:** `phase2_reviser.md` → `phase2_attacker.md` → individual Phase 1 files.
 
 ## Model & Cost
 - Default: Opus across the board. No corner-cutting on model quality.

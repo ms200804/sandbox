@@ -57,7 +57,7 @@ bot.py (on server)
 "whats running right now"
 → Lists active tasks
 
-"show me the destroyer output from the last sim run"
+"show me the attacker output from the last sim run"
 → Reads and posts the file
 
 "shepardize these cases: 546 US 440, 68 F3d 554"

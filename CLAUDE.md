@@ -20,7 +20,7 @@ Agent that queries CourtListener (and potentially other public legal databases) 
 See `projects/case-research/README.md` for design and API notes.
 
 ### 3. adversarial-sim (`projects/adversarial-sim/`)
-Two-phase argument stress-testing. Phase 1: six parallel agents (hostile OC, skeptical judge, appellate panel, economic realist, procedural tactician, record auditor) analyze independently. Phase 2: destroyer synthesizes vulnerabilities, refiner revises the argument and builds an opposition playbook. Accepts anything from a bare legal question to a full draft brief.
+Two-phase argument stress-testing. Phase 1: six parallel agents (opposing counsel, judge, appellate, strategist, procedural, evidence) analyze independently. Phase 2: attacker synthesizes vulnerabilities, reviser revises the argument and builds an opposition playbook. Accepts anything from a bare legal question to a full draft brief.
 
 See `projects/adversarial-sim/README.md` for design.
 

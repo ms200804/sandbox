@@ -119,7 +119,7 @@ case-research/
 
 **Level 1 (manual):** Run research → copy key cases into adversarial sim scenario as "Key Authorities."
 
-**Level 2 (planned):** Phase 1 agents in the adversarial sim get direct tool access to `search_cases`. Hostile OC independently finds counter-authorities. Appellate Panel verifies cited cases actually say what the advocate claims.
+**Level 2 (planned):** Phase 1 agents in the adversarial sim get direct tool access to `search_cases`. Opposing Counsel independently finds counter-authorities. Appellate verifies cited cases actually say what the advocate claims.
 
 **Slack workflow:** Research in `#research` → results auto-available for sim runs in `#adversarial`. The Slack bot chains tools across projects using thread context.
 

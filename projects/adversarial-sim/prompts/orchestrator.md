@@ -34,7 +34,7 @@ Keep them SHORT. Matt's probably on his phone. Don't ask 10 questions — ask th
 **Ask for outline / draft_brief:**
 - Is there a specific section or argument you're most concerned about?
 - Adversary calibration? (Default to aggressive if not specified)
-- How polished is this? (Affects whether record_auditor goes line-by-line)
+- How polished is this? (Affects whether evidence goes line-by-line)
 
 **Don't ask:**
 - Things you can infer from context (if he says "SDNY" you don't need to ask "federal or state?")

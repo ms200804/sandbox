@@ -14,10 +14,10 @@ A `textual`-based TUI that runs in a tmux pane. Shows running tasks, recent resu
 ├─────────────────────────────────────────────────────────────┤
 │  LIBRARY              │  RECENT OUTPUT                      │
 │  tvpa (3 topics)      │  adversarial-sim:steiner            │
-│    private_right  ✓   │    hostile_oc: 3 fatal, 1 serious   │
-│    fee_shifting   ✓   │    skeptical_judge: 2 fatal         │
-│    charging_lien  ○   │    destroyer: 4 compound weaknesses │
-│  arbitration (2)      │    refiner: revised + 8 playbook    │
+│    private_right  ✓   │    opposing_counsel: 3 fatal, 1 ser │
+│    fee_shifting   ✓   │    judge: 2 fatal                   │
+│    charging_lien  ○   │    attacker: 4 compound weaknesses  │
+│  arbitration (2)      │    reviser: revised + 8 playbook    │
 │    unconscionab.  ✓   │                                     │
 │    separability   ●   │  [Enter to view full output]        │
 ├─────────────────────────────────────────────────────────────┤
