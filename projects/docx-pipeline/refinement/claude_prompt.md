@@ -48,3 +48,25 @@ For each round (start at round 1):
 - `refinement/test_source.md`
 - `refinement/precedent/*`
 - `assets/*`
+
+## Document types
+
+This pipeline handles any document type, not just letters. The precedent,
+checklist, and test source define the target — the build scripts adapt.
+
+- **Court letters**: use `fix_letter_header.py` for letterhead injection +
+  continuation headers. Current default.
+- **Briefs (CDCA, WDTx, etc.)**: may need a different postprocessor or no
+  postprocessor. If `fix_letter_header.py` doesn't apply (e.g., briefs don't
+  use letterhead), write a new postprocessor or skip it. Update
+  `build_letter.sh` accordingly.
+- **Demand letters**: same as court letters but different tone/structure.
+  Same pipeline, different checklist.
+- **Other formats**: if the precedent uses line numbering, caption blocks,
+  or court-specific formatting not handled by current scripts, create new
+  postprocessing scripts as needed. The template (styles.xml) is always
+  the primary control surface.
+
+When starting a new document type, first build with NO postprocessor
+(just pandoc + reference template) to see what pandoc gives you. Then
+add postprocessing only for what pandoc can't handle natively.
