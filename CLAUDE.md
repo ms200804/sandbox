@@ -29,6 +29,9 @@ Claude-powered Slack bot via Socket Mode. Conversational interface for running s
 
 See `projects/slack-bot/README.md` for setup.
 
+## Adversarial Sim — Interactive Calibration (Required)
+After every sim run, the output MUST go through an interactive review with Matt before being used. The agents generate the universe of possible arguments; Matt calibrates which ones actually matter based on practice experience. This is a hard requirement, not optional. Never hand off raw sim output to a brief-editing instance without Matt reviewing it first. The calibration feedback gets folded back into the agent prompts via TUNING_INSTRUCTIONS.md.
+
 ## Research Follow-Up (`research_followup/`)
 Agents write notes here when they hit gaps CourtListener can't fill — cites needing proper Shepardizing, state court opinions CL doesn't have, cases it couldn't find or verify. These are practical gap-filling notes, not legal analysis — the Slack bot only has CourtListener, so its research is limited to what CL covers. The follow-up notes are just "here's what I couldn't find or confirm, go check Lexis." When Matt says "check any new research follow-up" or "check research notes," read this folder, summarize what's pending, and give him a clean list to run through Lexis AI. When he comes back with results, update the research library and mark the follow-up notes as done.
 
