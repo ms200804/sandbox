@@ -1,5 +1,5 @@
 [Unit]
-Description=Enlightenment Slack Bot
+Description=Claude Slack Bot
 After=network-online.target
 Wants=network-online.target
 
@@ -15,7 +15,7 @@ RestartSec=10
 # Logging
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=enlightenment
+SyslogIdentifier=claude-bot
 
 [Install]
 WantedBy=multi-user.target

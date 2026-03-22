@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Enlightenment Slack Bot
+Claude Slack Bot
 
-Conversational interface to tools running on the enlightenment box.
+Conversational interface to tools running on the claude-bot box.
 Receives messages via Slack Socket Mode, routes to Claude API with tools,
 posts responses back to Slack.
 
@@ -31,12 +31,12 @@ from task_manager import TaskManager
 load_dotenv()
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s [%(levelname)s] %(message)s")
-log = logging.getLogger("enlightenment")
+log = logging.getLogger("claude-bot")
 
 # ── Configuration ───────────────────────────────────────────────────
 CLAUDE_MODEL = "claude-sonnet-4-6"
 MAX_TOKENS = 4096
-SYSTEM_PROMPT = """You are Enlightenment, a helpful assistant running on a headless Debian \
+SYSTEM_PROMPT = """You are Claude, a helpful assistant running on a headless Debian \
 server. You help Matt Schmidt, a solo litigation attorney, with legal research, argument \
 testing, and task management.
 
@@ -86,11 +86,11 @@ to compose the scenario's Key Authorities section.
 # Set these to your Slack channel IDs (not names).
 # Find IDs: right-click channel → "View channel details" → ID at bottom.
 # Or leave as channel names and resolve at startup.
-CHANNEL_STATUS = os.environ.get("SLACK_CHANNEL_STATUS", "#enlightenment")
+CHANNEL_STATUS = os.environ.get("SLACK_CHANNEL_STATUS", "#claude-bot")
 CHANNEL_RESEARCH = os.environ.get("SLACK_CHANNEL_RESEARCH", "#research")
 CHANNEL_ADVERSARIAL = os.environ.get("SLACK_CHANNEL_ADVERSARIAL", "#adversarial")
 
-# Digest schedule (24h, server-local time — Pacific on enlightenment)
+# Digest schedule (24h, server-local time — Pacific on claude-bot)
 DIGEST_HOUR = int(os.environ.get("DIGEST_HOUR", "7"))
 DIGEST_MINUTE = int(os.environ.get("DIGEST_MINUTE", "0"))
 
@@ -325,7 +325,7 @@ def _make_channel_callback(channel_hint: str):
 # ── Morning Digest ──────────────────────────────────────────────────
 
 def run_digest():
-    """Post a morning digest to #enlightenment."""
+    """Post a morning digest to #claude-bot."""
     tasks_24h = task_mgr.list_tasks("all")
     # Filter to last 24 hours (rough — checks started_at string)
     cutoff = datetime.now().replace(hour=0, minute=0, second=0).isoformat()
@@ -392,7 +392,7 @@ def start_digest_scheduler():
 # ── Main ────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    log.info("Starting Enlightenment bot (Socket Mode)")
+    log.info("Starting Claude bot (Socket Mode)")
 
     # Start the morning digest scheduler
     start_digest_scheduler()
@@ -400,7 +400,7 @@ if __name__ == "__main__":
     # Post startup message
     try:
         post_to_channel(CHANNEL_STATUS,
-                        f"Enlightenment bot online. ({datetime.now().strftime('%H:%M')})")
+                        f"Claude bot online. ({datetime.now().strftime('%H:%M')})")
     except Exception as e:
         log.warning(f"Couldn't post startup message: {e}")
 

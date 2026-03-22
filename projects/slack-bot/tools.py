@@ -1,5 +1,5 @@
 """
-Tool definitions and implementations for the Enlightenment bot.
+Tool definitions and implementations for the Claude Slack bot.
 
 Each tool is defined as a Claude API tool schema + an implementation function.
 The bot's Claude instance calls these via tool_use; execute_tool() dispatches.
@@ -235,7 +235,7 @@ TOOL_DEFINITIONS = [
     {
         "name": "run_shell",
         "description": (
-            "Run a sandboxed shell command on enlightenment. "
+            "Run a sandboxed shell command on the server. "
             "Allowed: ls, cat, head, tail, wc, git, find, grep, df, uptime, ps. "
             "Blocked: rm, mv, sudo, curl, wget, pip, apt, and anything destructive."
         ),

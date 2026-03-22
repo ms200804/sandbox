@@ -1,5 +1,5 @@
 """
-Simple background task manager for the Enlightenment bot.
+Simple background task manager for the Claude Slack bot.
 
 Tracks tasks launched by tool calls (adversarial sims, research queries, etc.).
 Tasks run as subprocesses; status is tracked in memory with optional
@@ -13,7 +13,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 
-log = logging.getLogger("enlightenment.tasks")
+log = logging.getLogger("claude-bot.tasks")
 
 
 @dataclass
