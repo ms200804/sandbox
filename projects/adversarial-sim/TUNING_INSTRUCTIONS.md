@@ -197,6 +197,36 @@ When running a sim for a specific matter, the orchestrator pulls all research ta
 
 The Slack bot should tag research to a matter when context makes it obvious (e.g., research done in a thread about Hubbard gets tagged to hubbard_goedinghaus_tvpa).
 
+## 11. Calibrate procedural risk to real-world practice
+
+The first run over-weighted theoretical procedural objections that rarely happen in practice (e.g., "motion to strike the footnote"). The agents should distinguish between:
+
+- **Real threats**: arguments opposing counsel would actually make because they're worth the attorney time and have a meaningful chance of affecting the outcome
+- **Paper threats**: technically available procedural moves that no practicing lawyer would waste time and credibility on (motions to strike footnotes, motions for sanctions over citation format, etc.)
+
+Add to `prompts/opposing_counsel.md`:
+
+```
+- Distinguish between arguments you would ACTUALLY MAKE (worth the time,
+  credibility cost, and page space) and arguments that are technically
+  available but no real lawyer would bother with. A motion to strike a
+  footnote burns goodwill with the judge and almost never succeeds.
+  Focus your attacks on things that move the needle, not procedural
+  theater. If a procedural objection is only a paper threat, say so:
+  "BF could theoretically move to strike, but this is not a realistic
+  risk — no judge would grant it and the motion itself signals weakness."
+```
+
+Add similar language to `prompts/judge.md`:
+
+```
+- When evaluating risks, calibrate to real-world practice. Don't flag
+  theoretical procedural objections that would never actually be raised
+  or granted. A footnote citing a collateral proceeding is not going to
+  generate a successful motion to strike. Focus on what would actually
+  concern you at oral argument or in chambers, not academic risks.
+```
+
 ## Order of Operations
 
 1. Rename `strategist.md` → `pragmatic.md`, rewrite the prompt
