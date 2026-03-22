@@ -20,6 +20,7 @@ CASE_RESEARCH_DIR = SANDBOX_ROOT / "projects" / "case-research"
 # Add case-research to path so we can import library
 sys.path.insert(0, str(CASE_RESEARCH_DIR))
 import library as research_library
+from citation_extractor import extract_citations as _parse_citations, extract_from_file, auto_categorize
 
 # ── Tool Schemas (Claude API format) ────────────────────────────────
 
@@ -241,6 +242,70 @@ TOOL_DEFINITIONS = [
         },
     },
     {
+        "name": "batch_lookup",
+        "description": (
+            "Look up multiple case citations at once. Takes a list of citations, "
+            "resolves each against CourtListener, pulls full opinion text, and "
+            "optionally saves to the research library under a category. "
+            "Like Westlaw's batch retrieve but free."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "citations": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of citation strings (e.g., ['546 U.S. 440', '68 F.3d 554'])",
+                },
+                "save_to_library": {
+                    "type": "boolean",
+                    "description": "Save results to research library (default: true)",
+                    "default": True,
+                },
+                "category": {
+                    "type": "string",
+                    "description": "Library category to save under (e.g., 'tvpa', 'arbitration')",
+                },
+                "topic": {
+                    "type": "string",
+                    "description": "Library topic name (e.g., 'key_authorities')",
+                },
+            },
+            "required": ["citations"],
+        },
+    },
+    {
+        "name": "extract_citations",
+        "description": (
+            "Extract all case citations from a document (brief, memo, letter). "
+            "Parses the text, finds every case citation, resolves against "
+            "CourtListener for full text, and optionally saves to the library. "
+            "Use this to seed the research library from existing work product."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "file_path": {
+                    "type": "string",
+                    "description": "Path to the document (relative to sandbox root)",
+                },
+                "text": {
+                    "type": "string",
+                    "description": "Or provide raw text directly instead of a file path",
+                },
+                "save_to_library": {
+                    "type": "boolean",
+                    "description": "Save extracted citations to library (default: true)",
+                    "default": True,
+                },
+                "category": {
+                    "type": "string",
+                    "description": "Library category (auto-detected from content if omitted)",
+                },
+            },
+        },
+    },
+    {
         "name": "library_list",
         "description": (
             "List all categories and topics in the research library, "
@@ -345,6 +410,8 @@ def execute_tool(name: str, input_data: dict, task_mgr,
         "find_similar_cases": _find_similar_cases,
         "lookup_citation": _lookup_citation,
         "shepardize": _shepardize,
+        "batch_lookup": _batch_lookup,
+        "extract_citations": _extract_citations,
         "library_search": _library_search,
         "library_save": _library_save,
         "library_list": _library_list,
@@ -502,6 +569,105 @@ def _shepardize(input_data: dict) -> str:
         "status": "not_implemented",
         "message": f"Shepardize not yet implemented. Citations: {citations}",
     })
+
+
+def _batch_lookup(input_data: dict) -> str:
+    """Look up multiple citations at once."""
+    citations = input_data.get("citations", [])
+    save = input_data.get("save_to_library", True)
+    category = input_data.get("category", "")
+    topic = input_data.get("topic", "batch_lookup")
+
+    if not citations:
+        return "No citations provided."
+
+    # TODO: Resolve each citation against CL
+    # For now, parse and return structured data
+    results = []
+    for cite_str in citations:
+        parsed = _parse_citations(cite_str)
+        if parsed:
+            cit = parsed[0]
+            results.append({
+                "input": cite_str,
+                "parsed": cit.standard_cite,
+                "case_name": cit.case_name or "(needs CL lookup)",
+                "year": cit.year,
+                "resolved": False,
+                "status": "CL client not yet implemented — citation parsed but not resolved",
+            })
+        else:
+            results.append({
+                "input": cite_str,
+                "parsed": None,
+                "status": "Could not parse citation format",
+            })
+
+    output = {
+        "total": len(citations),
+        "parsed": sum(1 for r in results if r.get("parsed")),
+        "resolved": 0,  # TODO: will be non-zero once CL client works
+        "results": results,
+        "note": "CL client not yet implemented. Citations parsed but full text not pulled.",
+    }
+
+    if save and category:
+        research_library.save_research(
+            category=category, topic=topic, results=output,
+            query=f"Batch lookup: {len(citations)} citations",
+        )
+        output["saved_to"] = f"{category}/{topic}"
+
+    return json.dumps(output, indent=2)
+
+
+def _extract_citations(input_data: dict) -> str:
+    """Extract citations from a document."""
+    file_path = input_data.get("file_path")
+    text = input_data.get("text")
+    save = input_data.get("save_to_library", True)
+    category = input_data.get("category", "")
+
+    if file_path:
+        full_path = (SANDBOX_ROOT / file_path).resolve()
+        if not str(full_path).startswith(str(SANDBOX_ROOT.resolve())):
+            return "Access denied: path is outside the sandbox repo."
+        if not full_path.exists():
+            return f"File not found: {file_path}"
+        text = full_path.read_text(errors='replace')
+        source = file_path
+    elif text:
+        source = "inline text"
+    else:
+        return "Provide either file_path or text."
+
+    citations = _parse_citations(text)
+
+    if not citations:
+        return "No citations found in the document."
+
+    # Auto-categorize if no category specified
+    if not category:
+        categories = auto_categorize(citations, text)
+        category = categories[0]
+
+    results = {
+        "source": source,
+        "citation_count": len(citations),
+        "citations": [c.to_dict() for c in citations],
+        "auto_category": category,
+        "note": "Citations parsed. CL resolution pending client implementation.",
+    }
+
+    if save:
+        topic = Path(file_path).stem if file_path else "extracted"
+        research_library.save_research(
+            category=category, topic=topic, results=results,
+            query=f"Citation extraction from {source}",
+        )
+        results["saved_to"] = f"{category}/{topic}"
+
+    return json.dumps(results, indent=2)
 
 
 def _library_search(input_data: dict) -> str:
