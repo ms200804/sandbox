@@ -57,7 +57,9 @@ def _topic_key(category: str, topic: str) -> str:
 
 
 def save_research(category: str, topic: str, results: dict,
-                  query: str = "", jurisdiction: str = "") -> Path:
+                  query: str = "", jurisdiction: str = "",
+                  confidence: str = "medium",
+                  matters: list[str] | None = None) -> Path:
     """
     Save research results to the library.
 
@@ -67,6 +69,8 @@ def save_research(category: str, topic: str, results: dict,
         results: Structured JSON research results
         query: The original search query
         jurisdiction: Target jurisdiction
+        confidence: "high", "medium", or "low" — based on source quality
+        matters: Optional list of matter tags (e.g., ["hubbard_goedinghaus_tvpa"])
 
     Returns:
         Path to the saved file
@@ -82,6 +86,8 @@ def save_research(category: str, topic: str, results: dict,
         "topic": topic,
         "query": query,
         "jurisdiction": jurisdiction,
+        "confidence": confidence,
+        "matters": matters or [],
         "saved_at": datetime.now().isoformat(),
         "result_count": len(results.get("results", [])),
         "results": results,
@@ -99,6 +105,8 @@ def save_research(category: str, topic: str, results: dict,
         "file": f"topics/{cat_slug}/{topic_slug}.json",
         "query": query,
         "jurisdiction": jurisdiction,
+        "confidence": confidence,
+        "matters": matters or [],
         "saved_at": entry["saved_at"],
         "result_count": entry["result_count"],
     }
@@ -185,6 +193,62 @@ def list_stale() -> list[dict]:
             stale.append(entry_copy)
 
     return stale
+
+
+def update_confidence(category: str, topic: str, confidence: str) -> bool:
+    """Update the confidence level of a topic."""
+    key = _topic_key(category, topic)
+    index = _load_index()
+    entry = index.get("topics", {}).get(key)
+    if not entry:
+        return False
+
+    entry["confidence"] = confidence
+    _save_index(index)
+
+    # Also update the file
+    file_path = RESEARCH_DIR / entry["file"]
+    if file_path.exists():
+        data = json.loads(file_path.read_text())
+        data["confidence"] = confidence
+        file_path.write_text(json.dumps(data, indent=2) + "\n")
+
+    return True
+
+
+def add_matter(category: str, topic: str, matter: str) -> bool:
+    """Tag a topic with a matter identifier."""
+    key = _topic_key(category, topic)
+    index = _load_index()
+    entry = index.get("topics", {}).get(key)
+    if not entry:
+        return False
+
+    matters = entry.get("matters", [])
+    if matter not in matters:
+        matters.append(matter)
+        entry["matters"] = matters
+        _save_index(index)
+
+        file_path = RESEARCH_DIR / entry["file"]
+        if file_path.exists():
+            data = json.loads(file_path.read_text())
+            data["matters"] = matters
+            file_path.write_text(json.dumps(data, indent=2) + "\n")
+
+    return True
+
+
+def search_by_matter(matter: str) -> list[dict]:
+    """Find all research tagged to a specific matter."""
+    index = _load_index()
+    matches = []
+    for key, entry in index.get("topics", {}).items():
+        if matter in entry.get("matters", []):
+            entry_copy = dict(entry)
+            entry_copy["key"] = key
+            matches.append(entry_copy)
+    return matches
 
 
 def delete_topic(category: str, topic: str) -> bool:

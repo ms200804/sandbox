@@ -24,5 +24,18 @@ factual and procedural background. Include:
 brief: path/to/draft.md
 
 ## Agent Instructions
-[Optional — custom instructions for this scenario's agents. E.g., "Focus on
-California state law" or "Assume the arbitration clause is in a consumer contract."]
+[This is the highest-ROI section of the scenario file. Generic scenarios
+produce generic output. Specific instructions produce specific analysis.
+
+Good instructions include:
+- Procedural posture details the agents need (e.g., "this is before a
+  Magistrate Judge on pretrial referral, not full consent")
+- Which side Opposing Counsel should argue as, and what their best
+  arguments are
+- Legal framework that's already been established (e.g., "the Court has
+  already applied NY law to the fee agreement — that's settled")
+- Anything unusual about the case that agents might miss from the brief
+  alone (e.g., "BF is not a party — they were denied intervention")
+
+Bad instructions: "Be thorough." "Focus on the key issues." These add
+nothing. The agents already do this.]

@@ -17,7 +17,9 @@ Requires: claude CLI installed and ANTHROPIC_API_KEY set.
 
 import argparse
 import json
+import os
 import re
+import sys
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -32,7 +34,7 @@ PHASE1_AGENTS = [
     "opposing_counsel",
     "judge",
     "appellate",
-    "strategist",
+    "pragmatic",
     "procedural",
     "evidence",
 ]
@@ -370,6 +372,168 @@ def run_phase2(scenario: str, phase1_results: dict, model: str,
     return attacker_response, reviser_response
 
 
+# ── Post-Phase-2 Processing ────────────────────────────────────────
+
+SANDBOX_ROOT = Path(__file__).parent.parent.parent
+FOLLOWUP_DIR = SANDBOX_ROOT / "research_followup"
+CASE_RESEARCH_DIR = SANDBOX_ROOT / "projects" / "case-research"
+
+
+def extract_research_gaps(attacker_response: str, scenario_name: str):
+    """Parse attacker output for research gaps and write to research_followup/."""
+    gap_patterns = [
+        r'[Rr]esearch needed[:\s]+(.*)',
+        r'[Nn]o (?:Fifth|Second|Ninth|Third|Fourth|Sixth|Seventh|Eighth|Tenth|Eleventh|D\.C\.) Circuit authority[:\s]*(.*)',
+        r'[Cc]heck whether\s+(.*)',
+        r'[Vv]erify (?:the |that )?(.*?citation.*)',
+        r'[Ll]ook for\s+(.*?(?:cases|decisions|authority).*)',
+        r'[Nn]o (?:binding |direct )?authority\s+(.*)',
+        r'[Gg]ap[:\s]+(.*)',
+        r'[Nn]eed(?:s)? (?:to )?(?:confirm|verify|check)\s+(.*)',
+    ]
+
+    items = []
+    for pattern in gap_patterns:
+        for match in re.finditer(pattern, attacker_response):
+            item = match.group(1).strip().rstrip('.')
+            if item and len(item) > 10:
+                items.append(item)
+
+    if not items:
+        return
+
+    FOLLOWUP_DIR.mkdir(exist_ok=True)
+    filepath = FOLLOWUP_DIR / f"{scenario_name}.md"
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    if filepath.exists():
+        content = filepath.read_text()
+    else:
+        content = (
+            f"# Research Follow-Up: {scenario_name}\n"
+            f"Generated: {now}\n"
+            f"Status: pending\n"
+            f"Source: adversarial sim\n\n"
+        )
+
+    content += f"\n## Research Gaps from Attacker Report\n"
+    for item in items:
+        content += f"- [ ] {item}\n"
+
+    filepath.write_text(content)
+    print(f"  Research gaps written to {filepath.name} ({len(items)} items)")
+
+
+def verify_citations(output_dir: Path, scenario_name: str):
+    """Extract citations from all sim output and verify against CourtListener."""
+    sys.path.insert(0, str(CASE_RESEARCH_DIR))
+    try:
+        from citation_extractor import extract_citations
+        from cl_client import CourtListenerClient
+        cl = CourtListenerClient()
+    except (ImportError, ValueError) as e:
+        print(f"  Citation verification skipped: {e}")
+        return
+
+    all_citations = []
+    for md_file in sorted(output_dir.glob("*.md")):
+        if md_file.name == "summary.md":
+            continue
+        text = md_file.read_text()
+        cites = extract_citations(text)
+        for c in cites:
+            c.context = md_file.stem  # track which agent cited it
+            all_citations.append(c)
+
+    if not all_citations:
+        print("  No citations found in sim output.")
+        return
+
+    # Deduplicate
+    seen = set()
+    unique = []
+    for c in all_citations:
+        key = c.standard_cite
+        if key not in seen:
+            seen.add(key)
+            unique.append(c)
+
+    print(f"  Verifying {len(unique)} unique citations against CourtListener...")
+
+    verified = []
+    not_found = []
+    partial = []
+
+    for cit in unique:
+        try:
+            results = cl.search_opinions(f'citation:("{cit.standard_cite}")', limit=3)
+            if results:
+                best = results[0]
+                name_match = cit.case_name and cit.case_name.lower()[:20] in best.get("case_name", "").lower()
+                if name_match or not cit.case_name:
+                    verified.append({
+                        "citation": cit.standard_cite,
+                        "case_name": best.get("case_name", cit.case_name),
+                        "cited_by": cit.context,
+                        "status": "verified",
+                    })
+                else:
+                    partial.append({
+                        "citation": cit.standard_cite,
+                        "case_name_in_brief": cit.case_name,
+                        "case_name_in_cl": best.get("case_name", ""),
+                        "cited_by": cit.context,
+                        "status": "partial",
+                    })
+            else:
+                not_found.append({
+                    "citation": cit.standard_cite,
+                    "case_name": cit.case_name,
+                    "cited_by": cit.context,
+                    "status": "not_found",
+                })
+        except Exception:
+            not_found.append({
+                "citation": cit.standard_cite,
+                "case_name": cit.case_name,
+                "cited_by": cit.context,
+                "status": "error",
+            })
+
+    print(f"  Results: {len(verified)} verified, {len(partial)} partial, {len(not_found)} not found")
+
+    # Write to follow-up file
+    if not_found or partial:
+        FOLLOWUP_DIR.mkdir(exist_ok=True)
+        filepath = FOLLOWUP_DIR / f"{scenario_name}.md"
+        now = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+        if filepath.exists():
+            content = filepath.read_text()
+        else:
+            content = (
+                f"# Research Follow-Up: {scenario_name}\n"
+                f"Generated: {now}\n"
+                f"Status: pending\n"
+                f"Source: adversarial sim\n\n"
+            )
+
+        content += f"\n## Citation Verification (from sim output)\n"
+        for v in verified:
+            content += f"- [x] {v['citation']} — {v['case_name']} — verified\n"
+        for p in partial:
+            content += (f"- [?] {p['citation']} — brief says \"{p['case_name_in_brief']}\", "
+                       f"CL says \"{p['case_name_in_cl']}\". Cited by: {p['cited_by']}. "
+                       f"Confirm on Lexis.\n")
+        for nf in not_found:
+            content += (f"- [ ] {nf['citation']} — {nf['case_name'] or 'unknown'} — "
+                       f"NOT FOUND IN CL. Cited by: {nf['cited_by']}. "
+                       f"May be hallucinated or a CL gap. Verify on Lexis.\n")
+
+        filepath.write_text(content)
+        print(f"  Citation verification written to {filepath.name}")
+
+
 def run_simulation(scenario_path: str, model: str = DEFAULT_MODEL,
                    phase1_only: bool = False, passes: int = 1):
     """Run a full adversarial simulation, optionally with multiple passes."""
@@ -455,6 +619,16 @@ def run_simulation(scenario_path: str, model: str = DEFAULT_MODEL,
     # ── Write final summary ────────────────────────────────────────
     _write_summary(output_dir, phase1_results, last_attacker, last_reviser,
                    scenario_path, passes=passes, model=model)
+
+    # ── Post-processing ─────────────────────────────────────────────
+    print(f"\n═══ Post-Processing ═══")
+
+    # Extract research gaps from attacker report
+    if last_attacker:
+        extract_research_gaps(last_attacker, scenario_name)
+
+    # Verify citations in all output files
+    verify_citations(output_dir, scenario_name)
 
     print(f"\nSimulation complete ({passes} pass{'es' if passes > 1 else ''}). "
           f"All output in {output_dir}")
