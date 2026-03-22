@@ -1,0 +1,21 @@
+[Unit]
+Description=Enlightenment Slack Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mws
+WorkingDirectory=/home/mws/sandbox/projects/slack-bot
+EnvironmentFile=/home/mws/sandbox/projects/slack-bot/.env
+ExecStart=/home/mws/sandbox/projects/slack-bot/.venv/bin/python bot.py
+Restart=always
+RestartSec=10
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=enlightenment
+
+[Install]
+WantedBy=multi-user.target
