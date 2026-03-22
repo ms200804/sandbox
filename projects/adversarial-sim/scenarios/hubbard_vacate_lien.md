@@ -33,4 +33,4 @@ Key procedural posture points for all agents:
 For Opposing Counsel: You represent BF (the former firm). Your best arguments are about protecting the lien as a property right, questioning the court's authority to vacate absent an adversary proceeding, and arguing that subordination rather than vacatur is the proper remedy.
 
 ## Brief
-brief: ../../../incoming/hubbard_vacate_lien_v3.md
+brief: briefs/hubbard_vacate_lien_v3.md
