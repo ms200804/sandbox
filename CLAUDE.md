@@ -29,6 +29,12 @@ Claude-powered Slack bot via Socket Mode. Conversational interface for running s
 
 See `projects/slack-bot/README.md` for setup.
 
+## Research Follow-Up (`research_followup/`)
+Agents write notes here when they hit gaps CourtListener can't fill — cites needing proper Shepardizing, state court opinions CL doesn't have, doctrinal questions that need Lexis/Westlaw. When Matt says "check any new research follow-up" or "check research notes," read this folder, summarize what's pending, and give him a clean list to run through Lexis AI. When he comes back with results, update the research library and mark the follow-up notes as done.
+
+## Incoming Briefs (`incoming/`)
+Drop briefs here for citation extraction. Process with `python projects/case-research/process_incoming.py`. Extracted citations go to the research library; processed files move to `incoming/processed/`.
+
 ## Conventions
 - Python: use `uv` for dependency management
 - Each project gets its own README.md with setup instructions
