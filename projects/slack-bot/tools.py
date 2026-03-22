@@ -200,8 +200,14 @@ BLOCKED_SHELL_COMMANDS = {"rm", "mv", "sudo", "curl", "wget", "pip", "apt",
                           "chmod", "chown", "mkfs", "dd", "python", "node"}
 
 
-def execute_tool(name: str, input_data: dict, task_mgr) -> str:
-    """Dispatch a tool call to its implementation."""
+def execute_tool(name: str, input_data: dict, task_mgr,
+                 post_callback_factory=None) -> str:
+    """
+    Dispatch a tool call to its implementation.
+
+    post_callback_factory: optional callable(channel) -> callback(task)
+        Used by task-launching tools to post results to the right Slack channel.
+    """
     handlers = {
         "run_adversarial_sim": _run_adversarial_sim,
         "search_cases": _search_cases,
@@ -217,13 +223,16 @@ def execute_tool(name: str, input_data: dict, task_mgr) -> str:
     if not handler:
         return f"Unknown tool: {name}"
 
-    # Pass task_mgr to handlers that need it
-    if name in ("run_adversarial_sim", "check_task", "list_tasks"):
+    # Pass task_mgr and callback factory to handlers that need them
+    if name == "run_adversarial_sim":
+        return handler(input_data, task_mgr, post_callback_factory)
+    if name in ("check_task", "list_tasks"):
         return handler(input_data, task_mgr)
     return handler(input_data)
 
 
-def _run_adversarial_sim(input_data: dict, task_mgr) -> str:
+def _run_adversarial_sim(input_data: dict, task_mgr,
+                         post_callback_factory=None) -> str:
     """Launch an adversarial sim as a background task."""
     scenario_file = input_data.get("scenario_file")
     inline = input_data.get("inline_argument")
@@ -249,16 +258,23 @@ def _run_adversarial_sim(input_data: dict, task_mgr) -> str:
     if phase1_only:
         cmd.append("--phase1-only")
 
+    # Set up callback to post results to #adversarial when done
+    on_complete = None
+    if post_callback_factory:
+        on_complete = post_callback_factory("adversarial")
+
     task_id = task_mgr.launch(
         name=f"adversarial-sim:{scenario_path.stem}",
         command=cmd,
         cwd=str(ADVERSARIAL_SIM_DIR),
+        on_complete=on_complete,
     )
 
     return (
         f"Adversarial sim launched (task_id: {task_id}). "
         f"Scenario: {scenario_path.name}, Model: {model}. "
-        f"This will take a few minutes. Use check_task to monitor."
+        f"This will take a few minutes — I'll post results to #adversarial when done. "
+        f"Use check_task to monitor progress."
     )
 
 
