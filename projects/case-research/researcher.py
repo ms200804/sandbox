@@ -4,24 +4,29 @@ Legal Research Agent — iterative, jurisdiction-aware case research.
 
 Takes a legal question + jurisdiction, searches CourtListener iteratively,
 follows citation chains, detects adverse authority, and produces structured
-JSON output matching the schema in prompts/researcher.md.
+JSON output.
+
+Key feature: tiered query refinement using CL's Solr/Lucene syntax —
+quoted phrases, proximity, boolean, field-specific searches. Starts tight,
+broadens only if needed.
 
 Usage:
     # Topic research
-    python researcher.py "charging lien vacatur standard" --jurisdiction ca2
+    python researcher.py "charging lien vacatur standard" --jurisdiction ca5
 
     # Citation lookup
     python researcher.py --cite "250 F.3d 171"
 
     # Shepardize a list of citations
-    python researcher.py --shepardize "250 F.3d 171" "997 F.2d 1028" "521 U.S. 203"
+    python researcher.py --shepardize "250 F.3d 171" "997 F.2d 1028"
 
     # Save results to library
-    python researcher.py "charging lien vacatur" --jurisdiction ca2 --save --category liens
+    python researcher.py "charging lien vacatur" --jurisdiction ca5 --save --category liens
 """
 
 import argparse
 import json
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -39,7 +44,6 @@ except ImportError:
 
 # ── Court / Jurisdiction helpers ────────────────────────────────────
 
-# Federal circuits and their district courts
 CIRCUIT_COURTS = {
     "ca1": ["mad", "nhd", "rid", "med", "prd"],
     "ca2": ["nyd", "nysd", "nyed", "nywd", "nynd", "ctd", "vtd"],
@@ -62,20 +66,13 @@ def is_binding(court_id: str, target_jurisdiction: str) -> bool:
     """Determine if a court's opinions are binding for the target jurisdiction."""
     target = target_jurisdiction.lower()
     court = court_id.lower()
-
-    # SCOTUS binds everyone
     if court in ("scotus", "supreme court"):
         return True
-
-    # Same circuit is binding
     if court == target:
         return True
-
-    # If target is a district court, check if the opinion is from its circuit
     for circuit, districts in CIRCUIT_COURTS.items():
         if target in districts and court == circuit:
             return True
-
     return False
 
 
@@ -90,100 +87,392 @@ def get_circuit_for_court(court_id: str) -> str:
     return court
 
 
+# ── Query Refinement Engine ───────────────────────────────────────
+#
+# CL supports full Solr/Lucene syntax:
+#   - Quoted phrases: "charging lien"
+#   - Proximity: "charging lien"~5
+#   - Boolean: AND, OR, NOT, -, ()
+#   - Field-specific: caseName:, court_id:, citeCount:, dateFiled:
+#   - Wildcards: immigra*, ?mmigra*
+#   - Ranges: citeCount:[10 TO *], dateFiled:[2020-01-01 TO *]
+#   - Fuzzy: immigrant~
+#
+# Strategy: decompose the natural language query into legal concepts,
+# then generate tiered queries from tight to broad.
+
+# Two-word legal phrases that courts actually use in opinions.
+# Keep these SHORT (2 words) — they're the building blocks for Solr queries.
+# Longer concepts are composed from these + proximity operators.
+LEGAL_PHRASES = [
+    # Liens
+    "charging lien", "retaining lien", "attorney lien", "attorney's lien",
+    "lien priority", "lien subordination", "lien enforcement",
+    # Fees
+    "quantum meruit", "contingency fee", "fee agreement", "fee dispute",
+    "fee shifting", "reasonable value", "attorneys' fees", "attorney's fees",
+    # Motions
+    "motion to vacate", "motion to modify", "motion to compel",
+    "motion to dismiss", "summary judgment",
+    # Authority / Power
+    "inherent authority", "inherent power", "docket management",
+    # Estoppel / Preclusion
+    "judicial estoppel", "equitable estoppel", "collateral estoppel",
+    "res judicata", "stare decisis",
+    # Standards
+    "abuse of discretion", "de novo", "clearly erroneous",
+    "due process", "equal protection",
+    # Attorney status
+    "discharged attorney", "terminated attorney", "former attorney",
+    "pro hac vice", "for cause", "good cause", "without cause",
+    # Bankruptcy
+    "bankruptcy estate", "automatic stay",
+    # Injunctions
+    "preliminary injunction", "temporary restraining",
+    # Jurisdiction
+    "personal jurisdiction", "subject matter jurisdiction",
+    "forum non conveniens",
+    # Other
+    "class action", "class certification",
+    "statute of limitations",
+    "sex trafficking", "trafficking victims",
+]
+
+STOPWORDS = {"the", "a", "an", "of", "in", "for", "to", "and", "or", "on",
+             "by", "is", "are", "was", "were", "be", "been", "being",
+             "with", "at", "from", "as", "into", "through", "during",
+             "under", "between", "after", "before", "that", "this",
+             "which", "what", "when", "where", "how", "can", "should",
+             "may", "must", "whether", "not", "no", "but", "if",
+             "its", "their", "also", "such", "upon", "any", "all"}
+
+
+def decompose_query(query: str) -> dict:
+    """
+    Decompose a natural language legal query into structured components.
+    Prefers short (2-word) phrases that actually appear in court opinions.
+    """
+    query_lower = query.lower().strip()
+
+    # Find legal phrases present in the query (prefer shorter/more fundamental)
+    found_phrases = []
+    remaining = query_lower
+    # Sort by length ascending so we match the fundamental 2-word phrases first,
+    # not compound phrases that won't appear verbatim in opinions
+    for phrase in sorted(LEGAL_PHRASES, key=len):
+        if phrase in remaining:
+            found_phrases.append(phrase)
+            # Only remove the phrase from remaining if it's fully contained
+            # (avoid removing substrings that break other phrase detection)
+            remaining = remaining.replace(phrase, " ", 1)
+
+    # Deduplicate phrases (a longer phrase might contain a shorter one)
+    # Keep both — the tiered queries will use them at different levels
+    found_phrases = list(dict.fromkeys(found_phrases))
+
+    # Extract remaining meaningful terms
+    remaining_words = [w.strip(".,;:!?()[]{}\"'") for w in remaining.split()]
+    key_terms = [w for w in remaining_words if w and len(w) > 2 and w not in STOPWORDS]
+
+    return {
+        "original": query,
+        "phrases": found_phrases,
+        "key_terms": key_terms,
+    }
+
+
+def generate_tiered_queries(decomposed: dict) -> list[dict]:
+    """
+    Generate queries from tightest to broadest.
+
+    Tiers:
+      1. All phrases quoted + ANDed (tightest)
+      2. All phrases quoted + ANDed (no extra terms — in case terms add noise)
+      3. Primary phrase only (if multiple phrases, try just the most specific one)
+      4. Phrases with proximity (~50) between them
+      5. Primary phrase + key terms ANDed
+      6. Broad OR (last resort, but still uses quoted phrases)
+    """
+    phrases = decomposed["phrases"]
+    terms = decomposed["key_terms"]
+    queries = []
+
+    # Tier 1: All phrases ANDed with extra terms
+    if phrases and terms:
+        q = " AND ".join(f'"{p}"' for p in phrases) + " AND " + " AND ".join(terms)
+        queries.append({
+            "query": q,
+            "tier": "phrases_and_terms",
+            "description": f"All phrases + terms ANDed",
+        })
+
+    # Tier 2: Just phrases ANDed (drop extra terms that might add noise)
+    if len(phrases) >= 2:
+        q = " AND ".join(f'"{p}"' for p in phrases)
+        queries.append({
+            "query": q,
+            "tier": "phrases_only",
+            "description": f"Phrases only: {', '.join(phrases)}",
+        })
+
+    # Tier 3: Primary phrase alone (most specific phrase, not just longest)
+    # Heuristic: prefer the FIRST phrase found (user put it first = most important),
+    # not the longest (which may be generic like "inherent power")
+    if phrases:
+        primary = phrases[0]  # first phrase = user's primary concept
+        q = f'"{primary}"'
+        queries.append({
+            "query": q,
+            "tier": "primary_phrase",
+            "description": f"Primary phrase: \"{primary}\"",
+        })
+
+    # Tier 4: If we have 2+ phrases, try them as a proximity search
+    # "charging lien" AND "inherent power" within same opinion but relaxed
+    if len(phrases) >= 2:
+        # Use status:published to filter noise
+        q = " AND ".join(f'"{p}"' for p in phrases) + ' AND status:published'
+        queries.append({
+            "query": q,
+            "tier": "phrases_published",
+            "description": "Phrases in published opinions only",
+        })
+
+    # Tier 5: Primary phrase + terms (more flexible than Tier 1)
+    if phrases and terms:
+        primary = phrases[0]
+        term_str = " OR ".join(terms)
+        q = f'"{primary}" AND ({term_str})'
+        queries.append({
+            "query": q,
+            "tier": "primary_plus_terms",
+            "description": f"\"{primary}\" + flexible terms",
+        })
+
+    # Tier 6: Each phrase independently (gather results from each)
+    # This is handled in the search loop, not as a single query
+
+    # Tier 7: Broad OR — quoted phrases keep it from being total noise
+    if phrases:
+        all_parts = [f'"{p}"' for p in phrases]
+        q = " OR ".join(all_parts)
+        queries.append({
+            "query": q,
+            "tier": "broad",
+            "description": "Any phrase matches (OR)",
+        })
+
+    # If no phrases were found at all, try quoting 2-word chunks from the query
+    if not phrases:
+        words = decomposed["original"].split()
+        if len(words) >= 2:
+            # Try the full query as a phrase
+            queries.insert(0, {
+                "query": f'"{decomposed["original"]}"',
+                "tier": "exact_raw",
+                "description": f"Exact phrase: \"{decomposed['original']}\"",
+            })
+            # Try pairs of adjacent words
+            pairs = [f'"{words[i]} {words[i+1]}"' for i in range(len(words)-1)]
+            q = " AND ".join(pairs[:3])
+            queries.append({
+                "query": q,
+                "tier": "word_pairs",
+                "description": "Adjacent word pairs ANDed",
+            })
+        # Raw fallback
+        queries.append({
+            "query": decomposed["original"],
+            "tier": "raw",
+            "description": "Raw query (unmodified)",
+        })
+
+    return queries
+
+
+# ── Deduplication ─────────────────────────────────────────────────
+
+def _normalize_citation(cite: str) -> str:
+    """Normalize a citation string for dedup comparison."""
+    # Strip whitespace, lowercase, collapse spaces
+    c = re.sub(r'\s+', ' ', cite.strip().lower())
+    # Remove common variations
+    c = c.replace(".", "").replace(",", "")
+    return c
+
+
+def _dedup_key(result: dict) -> str:
+    """Generate a dedup key from a result. Prefer citation, fall back to case name + court."""
+    cite = result.get("citation", "")
+    if cite:
+        return _normalize_citation(cite)
+    # No citation — use case name + court as fallback
+    name = result.get("case_name", "").lower().strip()
+    court = result.get("court_id", result.get("court", "")).lower().strip()
+    return f"{name}|{court}"
+
+
+def deduplicate_results(results: list[dict]) -> list[dict]:
+    """Remove duplicate results (same case appearing under different CL entries)."""
+    seen = {}
+    deduped = []
+    for r in results:
+        key = _dedup_key(r)
+        if key and key not in seen:
+            seen[key] = True
+            deduped.append(r)
+    return deduped
+
+
+# ── Relevance Scoring ─────────────────────────────────────────────
+
+def score_relevance(result: dict, phrases: list[str], terms: list[str]) -> float:
+    """
+    Score a search result for relevance before fetching full text.
+    Uses case name and snippet. Returns 0.0 - 1.0.
+    """
+    text = (
+        (result.get("case_name", "") + " " + result.get("snippet", ""))
+        .lower()
+    )
+
+    score = 0.0
+    max_score = 0.0
+
+    # Phrase matches in snippet/name are worth the most
+    for phrase in phrases:
+        max_score += 3.0
+        if phrase.lower() in text:
+            score += 3.0
+
+    # Individual term matches
+    for term in terms:
+        max_score += 1.0
+        if term.lower() in text:
+            score += 1.0
+
+    # Bonus for high cite count (well-cited = likely important)
+    cite_count = result.get("cite_count", 0) or 0
+    if cite_count > 100:
+        score += 1.0
+        max_score += 1.0
+    elif cite_count > 20:
+        score += 0.5
+        max_score += 1.0
+    else:
+        max_score += 1.0
+
+    if max_score == 0:
+        return 0.0
+    return min(score / max_score, 1.0)
+
+
 # ── Research functions ──────────────────────────────────────────────
 
 def topic_research(client: CourtListenerClient, query: str,
                    jurisdiction: str, max_results: int = 15) -> dict:
     """
-    Full topic research: search, filter, read opinions, follow citations,
-    check for adverse authority.
+    Full topic research with tiered query refinement.
+
+    Strategy:
+      1. Decompose query into phrases + terms
+      2. Run tiered queries from tight to broad, stopping when we have enough
+      3. Search binding jurisdiction, SCOTUS, then broad
+      4. Follow citation chains from top binding results
+      5. Adverse authority search
+      6. Deduplicate, score, and rank
     """
     search_log = []
     all_results = []
     seen_ids = set()
 
-    # Phase 1: Initial search — binding authority
-    print(f"Searching: '{query}' in {jurisdiction}...")
-    binding_results = client.search_opinions(query, court=jurisdiction, limit=20)
+    # Decompose the query
+    decomposed = decompose_query(query)
+    tiered_queries = generate_tiered_queries(decomposed)
     search_log.append(
-        f"Initial search: '{query}' in {jurisdiction} -> {len(binding_results)} results"
+        f"Decomposed: phrases={decomposed['phrases']}, terms={decomposed['key_terms']}"
     )
-    print(f"  Found {len(binding_results)} results in {jurisdiction}")
+    print(f"Query decomposition:")
+    print(f"  Phrases: {decomposed['phrases']}")
+    print(f"  Terms: {decomposed['key_terms']}")
+    print(f"  Generated {len(tiered_queries)} tiered queries")
 
-    for r in binding_results:
-        if r["id"] and r["id"] not in seen_ids:
-            seen_ids.add(r["id"])
-            r["_binding"] = True
-            r["_source"] = "direct_search"
-            all_results.append(r)
-
-    # Also search SCOTUS if target isn't SCOTUS
-    if jurisdiction != "scotus":
-        scotus_results = client.search_opinions(query, court="scotus", limit=5)
-        search_log.append(
-            f"SCOTUS search: '{query}' -> {len(scotus_results)} results"
-        )
-        for r in scotus_results:
-            if r["id"] and r["id"] not in seen_ids:
-                seen_ids.add(r["id"])
-                r["_binding"] = True
-                r["_source"] = "scotus_search"
+    def _add_results(results, binding, source):
+        added = 0
+        for r in results:
+            rid = r.get("id")
+            if rid and rid not in seen_ids:
+                seen_ids.add(rid)
+                r["_binding"] = binding if isinstance(binding, bool) else is_binding(
+                    r.get("court_id", ""), jurisdiction)
+                r["_source"] = source
                 all_results.append(r)
+                added += 1
+        return added
 
-    # Phase 2: Broader search for persuasive authority
-    broad_results = client.search_opinions(query, limit=20)
-    new_persuasive = 0
-    for r in broad_results:
-        if r["id"] and r["id"] not in seen_ids:
-            seen_ids.add(r["id"])
-            r["_binding"] = is_binding(r.get("court_id", ""), jurisdiction)
-            r["_source"] = "broad_search"
-            all_results.append(r)
-            new_persuasive += 1
-    search_log.append(
-        f"Broad search (all courts): '{query}' -> {new_persuasive} additional results"
-    )
-    print(f"  +{new_persuasive} persuasive results from other courts")
+    # Phase 1: Tiered search in binding jurisdiction
+    # Run queries from tight to broad, accumulating results.
+    # Stop escalating tiers once we have >= 5 binding results.
+    binding_target = 5
+
+    for tq in tiered_queries:
+        q = tq["query"]
+        tier = tq["tier"]
+
+        # Search binding jurisdiction
+        results = client.search_opinions(q, court=jurisdiction, limit=20)
+        added = _add_results(results, True, f"tier_{tier}")
+        search_log.append(f"[{tier}] '{q}' in {jurisdiction} -> {len(results)} hits, {added} new")
+        print(f"  [{tier}] {jurisdiction}: {len(results)} hits, {added} new")
+
+        # Also search SCOTUS
+        if jurisdiction != "scotus":
+            scotus = client.search_opinions(q, court="scotus", limit=5)
+            s_added = _add_results(scotus, True, f"tier_{tier}_scotus")
+            if s_added:
+                search_log.append(f"[{tier}] SCOTUS -> {s_added} new")
+                print(f"  [{tier}] SCOTUS: {s_added} new")
+
+        binding_count = sum(1 for r in all_results if r.get("_binding"))
+        if binding_count >= binding_target and tier not in ("broad", "raw"):
+            print(f"  -> {binding_count} binding results, skipping broader tiers")
+            search_log.append(f"Stopped at tier '{tier}' with {binding_count} binding results")
+            break
+
+    # Phase 2: Broader search for persuasive authority (use best tier that worked)
+    best_tier = next((tq for tq in tiered_queries if tq["tier"] not in ("broad", "raw")), tiered_queries[0])
+    broad_results = client.search_opinions(best_tier["query"], limit=20)
+    new_persuasive = _add_results(broad_results, "auto", f"broad_{best_tier['tier']}")
+    search_log.append(f"Broad (all courts, {best_tier['tier']}): +{new_persuasive} persuasive")
+    print(f"  Broad search: +{new_persuasive} persuasive results")
 
     # Phase 3: Follow citation chains from top binding results
     binding_cases = [r for r in all_results if r.get("_binding")]
     chain_additions = 0
-    for case in binding_cases[:3]:  # top 3 binding cases
+    for case in binding_cases[:3]:
         cluster_id = case.get("id")
         if not cluster_id:
             continue
-
-        # Forward citations (who cites this case)
         try:
             citing = client.citing_opinions(cluster_id, limit=10)
-            for c in citing:
-                cid = c.get("id")
-                if cid and cid not in seen_ids:
-                    seen_ids.add(cid)
-                    c["_binding"] = is_binding(c.get("court", ""), jurisdiction)
-                    c["_source"] = f"cited_by_{cluster_id}"
-                    c["cite_count"] = 0
-                    c["snippet"] = ""
-                    all_results.append(c)
-                    chain_additions += 1
+            chain_additions += _add_results(citing, "auto", f"chain_{cluster_id}")
         except Exception:
             pass
 
     if chain_additions:
-        search_log.append(
-            f"Citation chain following from top {min(3, len(binding_cases))} binding cases -> {chain_additions} additional"
-        )
-        print(f"  +{chain_additions} from citation chains")
+        search_log.append(f"Citation chains from top 3 binding -> +{chain_additions}")
+        print(f"  Citation chains: +{chain_additions}")
 
     # Phase 4: Adverse authority search
-    adverse_queries = _generate_adverse_queries(query)
+    adverse_queries = _generate_adverse_queries(decomposed)
     adverse_results = []
     for aq in adverse_queries:
         try:
             adv = client.search_opinions(aq, court=jurisdiction, limit=5)
             for r in adv:
-                if r["id"] and r["id"] not in seen_ids:
-                    seen_ids.add(r["id"])
+                rid = r.get("id")
+                if rid and rid not in seen_ids:
+                    seen_ids.add(rid)
                     r["_binding"] = True
                     r["_source"] = "adverse_search"
                     r["_adverse_query"] = aq
@@ -192,17 +481,27 @@ def topic_research(client: CourtListenerClient, query: str,
         except Exception:
             pass
     if adverse_results:
-        search_log.append(
-            f"Adverse authority search: {len(adverse_queries)} queries -> {len(adverse_results)} potential adverse cases"
-        )
-        print(f"  {len(adverse_results)} potential adverse authority found")
+        search_log.append(f"Adverse search: {len(adverse_queries)} queries -> {len(adverse_results)} results")
+        print(f"  Adverse authority: {len(adverse_results)} potential")
 
-    # Phase 5: Read opinion text for top results and build structured output
-    # Sort: binding first, then by cite count
-    all_results.sort(
-        key=lambda r: (not r.get("_binding", False), -(r.get("cite_count", 0) or 0))
-    )
+    # Phase 5: Deduplicate, score, and rank
+    all_results = deduplicate_results(all_results)
+    dedup_count = len(seen_ids) - len(all_results)
+    if dedup_count > 0:
+        search_log.append(f"Deduplication removed {dedup_count} duplicates")
 
+    # Score each result
+    for r in all_results:
+        r["_relevance_score"] = score_relevance(r, decomposed["phrases"], decomposed["key_terms"])
+
+    # Sort: binding first, then by relevance score, then cite count
+    all_results.sort(key=lambda r: (
+        not r.get("_binding", False),
+        -r.get("_relevance_score", 0),
+        -(r.get("cite_count", 0) or 0),
+    ))
+
+    # Phase 6: Read opinion text for top results
     structured_results = []
     for r in all_results[:max_results]:
         opinion_text = ""
@@ -224,6 +523,7 @@ def topic_research(client: CourtListenerClient, query: str,
             "holding": holding,
             "key_quotes": key_quotes,
             "relevance": "adverse" if r.get("_source") == "adverse_search" else "supports",
+            "relevance_score": round(r.get("_relevance_score", 0), 2),
             "relevance_notes": f"Found via {r.get('_source', 'search')}",
             "negative_treatment": None,
             "cl_url": r.get("url", ""),
@@ -241,10 +541,8 @@ def topic_research(client: CourtListenerClient, query: str,
         for r in adverse_results[:5]
     ]
 
-    # Detect circuit splits (simple heuristic: same query, different outcomes in different circuits)
     circuit_splits = _detect_circuit_splits(all_results, jurisdiction)
 
-    # Assess confidence
     binding_count = sum(1 for r in structured_results if r["binding"])
     confidence = "high" if binding_count >= 3 else "medium" if binding_count >= 1 else "low"
     confidence_notes = (
@@ -254,7 +552,6 @@ def topic_research(client: CourtListenerClient, query: str,
     if not binding_count:
         confidence_notes += "No binding authority — issue may be novel in this circuit."
 
-    # Gaps
     gaps = []
     if not binding_count:
         gaps.append(f"No binding authority found in {jurisdiction} — check Westlaw/Lexis")
@@ -265,6 +562,8 @@ def topic_research(client: CourtListenerClient, query: str,
         "query": query,
         "jurisdiction": jurisdiction,
         "research_type": "topic",
+        "query_decomposition": decomposed,
+        "tiers_used": [tq["tier"] for tq in tiered_queries],
         "results": structured_results,
         "adverse_authority": adverse_authority,
         "circuit_splits": circuit_splits,
@@ -299,7 +598,6 @@ def citation_lookup(client: CourtListenerClient, citation: str,
             "gaps": [f"Citation '{citation}' not found in CourtListener"],
         }
 
-    # Forward citations
     print(f"  Found: {opinion.case_name}")
     forward = []
     try:
@@ -308,7 +606,6 @@ def citation_lookup(client: CourtListenerClient, citation: str,
     except Exception:
         pass
 
-    # Check for negative treatment in forward citations
     negative_treatment = None
     for fwd in forward:
         name_lower = fwd.get("case_name", "").lower()
@@ -354,9 +651,7 @@ def citation_lookup(client: CourtListenerClient, citation: str,
             else "Citation found but full text not available in CL"
         ),
         "gaps": [] if opinion.text else ["Full opinion text not in CL — pull from Westlaw/Lexis"],
-        "meta": {
-            "timestamp": datetime.now().isoformat(),
-        },
+        "meta": {"timestamp": datetime.now().isoformat()},
     }
 
 
@@ -377,14 +672,12 @@ def shepardize(client: CourtListenerClient, citations: list[str]) -> dict:
             })
             continue
 
-        # Check forward citations for treatment signals
         forward = []
         try:
             forward = client.citing_opinions(opinion.id, limit=30)
         except Exception:
             pass
 
-        # Simple treatment heuristic based on forward citation count and recency
         status = "good_law"
         notes = []
 
@@ -392,7 +685,6 @@ def shepardize(client: CourtListenerClient, citations: list[str]) -> dict:
             status = "caution"
             notes.append("No forward citations found — may be very recent or limited CL coverage")
 
-        # Check if any forward cites are from higher courts (possible reversal)
         for fwd in forward:
             court = fwd.get("court", "").lower()
             if court == "scotus" and opinion.court.lower() != "scotus":
@@ -433,52 +725,56 @@ def shepardize(client: CourtListenerClient, citations: list[str]) -> dict:
 
 # ── Internal helpers ────────────────────────────────────────────────
 
-def _generate_adverse_queries(query: str) -> list[str]:
-    """Generate search queries that might find contrary authority."""
-    # Simple keyword inversion — look for opposite outcomes
-    adverse_terms = []
+def _generate_adverse_queries(decomposed: dict) -> list[str]:
+    """Generate search queries that might find contrary authority using Solr syntax."""
+    phrases = decomposed["phrases"]
+    queries = []
 
-    words = query.lower().split()
     negation_pairs = {
-        "grant": "deny",
+        "grant": "denied",
         "granted": "denied",
-        "allow": "deny",
+        "allow": "denied",
         "enforce": "unenforceable",
         "valid": "invalid",
         "vacate": "uphold",
         "vacatur": "enforce",
         "liable": "not liable",
-        "affirm": "reverse",
+        "affirm": "reversed",
+        "subordination": "priority",
     }
 
-    for word in words:
-        if word in negation_pairs:
-            modified = query.lower().replace(word, negation_pairs[word])
-            adverse_terms.append(modified)
+    # For each phrase, try pairing with negation terms
+    for phrase in phrases:
+        words = phrase.split()
+        for word in words:
+            if word in negation_pairs:
+                opposite = negation_pairs[word]
+                modified = phrase.replace(word, opposite)
+                queries.append(f'"{modified}"')
 
-    # Also try adding "denied" / "rejected" to the original query
-    if not adverse_terms:
-        adverse_terms.append(f"{query} denied")
-        adverse_terms.append(f"{query} rejected")
+    # If we have core phrases, search for them with denial language
+    if phrases:
+        core = phrases[0]  # most specific phrase
+        queries.append(f'"{core}" AND (denied OR rejected OR unenforceable)')
+        queries.append(f'"{core}" AND (upheld OR enforced OR valid)')
 
-    return adverse_terms[:3]
+    # Fallback: use original terms with negation
+    if not queries:
+        original = decomposed["original"]
+        queries.append(f'{original} AND denied')
+        queries.append(f'{original} AND rejected')
+
+    return queries[:4]  # cap at 4 adverse queries
 
 
 def _extract_holding_and_quotes(text: str, query: str) -> tuple[str, list[dict]]:
-    """
-    Extract a holding statement and key quotes from opinion text.
-
-    This is a best-effort extraction — looks for common holding patterns
-    and sentences containing query-relevant terms.
-    """
+    """Extract a holding statement and key quotes from opinion text."""
     if not text:
         return "Full text not available in CourtListener", []
 
-    # Truncate very long opinions for processing
     text_sample = text[:15000]
     sentences = [s.strip() for s in text_sample.replace('\n', ' ').split('.') if s.strip()]
 
-    # Look for holding-like sentences
     holding_signals = ["we hold", "we conclude", "the court holds", "we therefore hold",
                        "it is ordered", "we find that", "we affirm", "we reverse",
                        "the court finds", "we grant", "we deny"]
@@ -492,7 +788,6 @@ def _extract_holding_and_quotes(text: str, query: str) -> tuple[str, list[dict]]
     if not holding and sentences:
         holding = "(Holding not auto-extracted — review full text)"
 
-    # Find query-relevant quotes
     query_terms = [t.lower() for t in query.split() if len(t) > 3]
     key_quotes = []
     for sent in sentences:
@@ -511,10 +806,7 @@ def _extract_holding_and_quotes(text: str, query: str) -> tuple[str, list[dict]]
 
 
 def _detect_circuit_splits(results: list[dict], target_jurisdiction: str) -> list[dict]:
-    """
-    Simple circuit split detection: check if results from different circuits
-    show up in both the main and adverse searches.
-    """
+    """Simple circuit split detection."""
     main_circuits = set()
     adverse_circuits = set()
 
@@ -525,13 +817,11 @@ def _detect_circuit_splits(results: list[dict], target_jurisdiction: str) -> lis
         else:
             main_circuits.add(circuit)
 
-    # If we have results from different circuits in both pools, flag it
     if main_circuits and adverse_circuits:
-        overlap = main_circuits & adverse_circuits
         split_circuits = adverse_circuits - main_circuits
         if split_circuits:
             return [{
-                "issue": "Potential circuit split detected — some circuits appear only in adverse results",
+                "issue": "Potential circuit split — some circuits appear only in adverse results",
                 "circuits_for": sorted(main_circuits - adverse_circuits),
                 "circuits_against": sorted(split_circuits),
                 "scotus_status": "Unknown — verify manually",
@@ -546,7 +836,7 @@ def run_research(query: str = "", jurisdiction: str = "",
                  cite: str = "", shepardize_cites: list[str] | None = None,
                  save: bool = False, category: str = "", topic: str = "",
                  max_results: int = 15) -> dict:
-    """Main entry point — dispatches to the right research mode."""
+    """Main entry point."""
     client = CourtListenerClient()
 
     if shepardize_cites:
@@ -558,14 +848,11 @@ def run_research(query: str = "", jurisdiction: str = "",
     else:
         return {"error": "Provide a query, --cite, or --shepardize"}
 
-    # Save to library if requested
     if save and LIBRARY_AVAILABLE:
         cat = category or "general"
         top = topic or query[:50].replace(" ", "_").lower()
         path = research_library.save_research(
-            category=cat,
-            topic=top,
-            results=result,
+            category=cat, topic=top, results=result,
             query=query or cite or str(shepardize_cites),
             jurisdiction=jurisdiction,
         )
@@ -579,7 +866,7 @@ if __name__ == "__main__":
     parser.add_argument("query", nargs="?", default="",
                         help="Research question or topic")
     parser.add_argument("--jurisdiction", "-j", default="",
-                        help="Target jurisdiction (e.g., ca2, ca9, scotus)")
+                        help="Target jurisdiction (e.g., ca2, ca5, scotus)")
     parser.add_argument("--cite", default="",
                         help="Look up a specific citation")
     parser.add_argument("--shepardize", nargs="+", default=None,
@@ -610,19 +897,23 @@ if __name__ == "__main__":
     if args.json:
         print(json.dumps(result, indent=2))
     else:
-        # Formatted summary
         print(f"\n{'=' * 60}")
         print(f"Research: {result.get('query', '')}")
         print(f"Type: {result.get('research_type', '')}")
         if result.get("jurisdiction"):
             print(f"Jurisdiction: {result['jurisdiction']}")
         print(f"Confidence: {result.get('confidence', 'unknown')}")
+        if result.get("query_decomposition"):
+            d = result["query_decomposition"]
+            print(f"Phrases: {d.get('phrases', [])}")
+            print(f"Terms: {d.get('key_terms', [])}")
         print(f"{'=' * 60}")
 
         for i, r in enumerate(result.get("results", []), 1):
             binding_tag = " [BINDING]" if r.get("binding") else ""
             status_tag = f" [{r['status'].upper()}]" if r.get("status") else ""
-            print(f"\n{i}. {r.get('case_name', 'Unknown')}{binding_tag}{status_tag}")
+            score_tag = f" (rel={r['relevance_score']})" if r.get("relevance_score") is not None else ""
+            print(f"\n{i}. {r.get('case_name', 'Unknown')}{binding_tag}{status_tag}{score_tag}")
             print(f"   {r.get('citation', '(no cite)')}")
             if r.get("court"):
                 print(f"   Court: {r['court']}  Filed: {r.get('date_filed', '?')}")
@@ -644,8 +935,6 @@ if __name__ == "__main__":
             print("CIRCUIT SPLITS:")
             for s in result["circuit_splits"]:
                 print(f"  Issue: {s['issue']}")
-                print(f"  For: {', '.join(s['circuits_for'])}")
-                print(f"  Against: {', '.join(s['circuits_against'])}")
 
         if result.get("gaps"):
             print(f"\n{'─' * 40}")
