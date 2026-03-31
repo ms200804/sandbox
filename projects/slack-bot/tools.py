@@ -882,8 +882,14 @@ def _run_shell(input_data: dict) -> str:
     if not command:
         return "No command provided."
 
+    # Reject shell metacharacters to prevent command injection
+    # (e.g., "ls; rm -rf /" would bypass the single-word allowlist check)
+    if any(c in command for c in ";|&`$(){}\\<>\n"):
+        return "Blocked: shell metacharacters are not allowed."
+
     # Extract the base command (first word)
-    base_cmd = command.split()[0].split("/")[-1]  # handle /usr/bin/ls etc.
+    parts = command.split()
+    base_cmd = parts[0].split("/")[-1]  # handle /usr/bin/ls etc.
 
     if base_cmd in BLOCKED_SHELL_COMMANDS:
         return f"Blocked: '{base_cmd}' is not allowed for safety."
@@ -897,8 +903,7 @@ def _run_shell(input_data: dict) -> str:
 
     try:
         result = subprocess.run(
-            command,
-            shell=True,
+            parts,
             capture_output=True,
             text=True,
             timeout=30,

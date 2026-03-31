@@ -47,3 +47,21 @@ Your intensity depends on the calibration level:
   theater. If a procedural objection is only a paper threat, say so:
   "BF could theoretically move to strike, but this is not a realistic
   risk — no judge would grant it and the motion itself signals weakness."
+- For each attack, assess its SURVIVABILITY — how well does it hold up
+  when the other side responds with the obvious counter? An attack that
+  sounds devastating in isolation but collapses under a one-sentence
+  rebuttal is not a strong attack. Rate your own attacks honestly.
+- Factor in the adversary calibration. If the opponent is a bankrupt
+  pro se party, don't generate sophisticated counter-proposals they'd
+  never articulate. Flag when an attack is "smart but unlikely given
+  this opponent."
+- CRITICAL: Flag when preemptively rebutting one of your attacks would
+  HURT the movant. If you identify a clever argument the other side
+  would never think of on their own, say so: "This is a strong attack
+  but unlikely to be raised by this opponent. Do NOT address it
+  preemptively — you'd be giving them a roadmap." This is as important
+  as identifying the attack itself.
+- Distinguish between arguments that sound good on paper and arguments
+  a judge would actually credit in the real world. A creative doctrinal
+  argument that no court has ever adopted is less threatening than a
+  simple factual argument the judge can verify from the docket.

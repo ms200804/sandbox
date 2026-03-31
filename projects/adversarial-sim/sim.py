@@ -381,23 +381,61 @@ CASE_RESEARCH_DIR = SANDBOX_ROOT / "projects" / "case-research"
 
 def extract_research_gaps(attacker_response: str, scenario_name: str):
     """Parse attacker output for research gaps and write to research_followup/."""
+    # Process line by line to avoid pulling table rows
+    items = []
+    seen = set()
+
+    # Patterns that capture the full actionable sentence/clause
     gap_patterns = [
-        r'[Rr]esearch needed[:\s]+(.*)',
-        r'[Nn]o (?:Fifth|Second|Ninth|Third|Fourth|Sixth|Seventh|Eighth|Tenth|Eleventh|D\.C\.) Circuit authority[:\s]*(.*)',
-        r'[Cc]heck whether\s+(.*)',
-        r'[Vv]erify (?:the |that )?(.*?citation.*)',
-        r'[Ll]ook for\s+(.*?(?:cases|decisions|authority).*)',
-        r'[Nn]o (?:binding |direct )?authority\s+(.*)',
-        r'[Gg]ap[:\s]+(.*)',
-        r'[Nn]eed(?:s)? (?:to )?(?:confirm|verify|check)\s+(.*)',
+        # "Search for [Fifth Circuit] authority on/for X"
+        r'([Ss]earch for\s+.+?(?:authority|cases|decisions|precedent)[^.]*)',
+        # "Find [Circuit] authority/cases" — capture to end of sentence
+        r'([Ff]ind\s+\w+\s+(?:Circuit\s+)?(?:authority|cases|decisions)[^.]*)',
+        # "Obtain the X from Y"
+        r'([Oo]btain\s+(?:the\s+)?(?:actual\s+)?.+?(?:from|order|notice|document)[^.]*)',
+        # "Verify whether X"
+        r'([Vv]erify\s+whether\s+[^.]+)',
+        # "No [binding] [Circuit] authority for/on X" — rewrite as search task
+        r'([Nn]o\s+(?:binding\s+)?(?:\w+\s+)?Circuit\s+(?:authority|precedent)\s+(?:for|on)\s+[^.]+)',
     ]
 
-    items = []
-    for pattern in gap_patterns:
-        for match in re.finditer(pattern, attacker_response):
-            item = match.group(1).strip().rstrip('.')
-            if item and len(item) > 10:
-                items.append(item)
+    for line in attacker_response.splitlines():
+        line = line.strip()
+        # Skip table rows and short lines
+        if '|' in line and line.count('|') >= 2:
+            continue
+        if len(line) < 25:
+            continue
+        # Skip section headers
+        if line.startswith('#'):
+            continue
+
+        for pattern in gap_patterns:
+            for match in re.finditer(pattern, line):
+                item = match.group(1).strip().rstrip('.')
+                # Clean up markdown artifacts
+                item = re.sub(r'\*\*.*?\*\*', '', item).strip(' -—#*')
+                item = re.sub(r'\(#\d+\)', '', item).strip()
+                # Clean trailing parens/fragments
+                item = re.sub(r'\([^)]{0,5}$', '', item).strip()
+                # Must be substantive
+                if (item and len(item) > 20 and len(item) < 300
+                        and '|' not in item):
+                    # Aggressive dedup: check if any existing item contains this or vice versa
+                    norm = item.lower()
+                    is_dup = False
+                    for existing in list(seen):
+                        if norm in existing or existing in norm:
+                            is_dup = True
+                            # Keep the longer one
+                            if len(norm) > len(existing):
+                                seen.discard(existing)
+                                items = [i for i in items if i.lower() != existing]
+                            else:
+                                break
+                    if not is_dup:
+                        seen.add(norm)
+                        items.append(item)
 
     if not items:
         return

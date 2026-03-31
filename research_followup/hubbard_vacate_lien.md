@@ -1,9 +1,13 @@
 # Research Follow-Up: hubbard_vacate_lien
-Generated: 2026-03-22 01:14
+Generated: 2026-03-22 02:57
 Status: pending
 Source: adversarial sim
 
 
 ## Research Gaps from Attacker Report
-- [ ] + MJ authority gap + law-of-the-case overreach** (#2 + #3 + #4) | All six agents | These three weaknesses form a chain: the brief lacks authority for the remedy, lacks authority for the forum, and overstates the authority of the prior ruling. Together they create a "by what power?" problem — BF can attack at any link and the whole chain fails. |
-- [ ] + law-of-the-case overreach** (#2 + #3 + #4) | All six agents | These three weaknesses form a chain: the brief lacks authority for the remedy, lacks authority for the forum, and overstates the authority of the prior ruling. Together they create a "by what power?" problem — BF can attack at any link and the whole chain fails. |
+- [ ] Obtain the actual abandonment notice/order from the bankruptcy docket — verify whether the lien was specifically abandoned
+- [ ] obtain written confirmation from the trustee that the lien is considered abandoned
+- [ ] Search for Fifth Circuit or W.D. Tex. authority where a federal court modified a charging lien as case management
+- [ ] Find Fifth Circuit authority on the dispositive/non-dispositive line
+- [ ] Obtain trustee documentation (declaration or bankruptcy docket entries) for the abandonment
+- [ ] Obtain abandonment documentation or seek stay relief

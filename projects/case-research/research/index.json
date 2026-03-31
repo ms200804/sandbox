@@ -1,5 +1,17 @@
 {
   "description": "Index of researched topics. Auto-generated and updated by the research agent.",
   "stale_after_days": 90,
-  "topics": {}
+  "topics": {
+    "liens/hubbard_vacate_lien": {
+      "category": "liens",
+      "topic": "hubbard_vacate_lien",
+      "file": "topics/liens/hubbard_vacate_lien.json",
+      "query": "Extracted from /home/mws/sandbox/incoming/hubbard_vacate_lien_v3.md",
+      "jurisdiction": "",
+      "confidence": "medium",
+      "matters": [],
+      "saved_at": "2026-03-28T12:49:04.612186",
+      "result_count": 15
+    }
+  }
 }

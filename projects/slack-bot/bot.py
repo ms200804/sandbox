@@ -618,8 +618,9 @@ def handle_message(text: str, channel: str, thread_ts: str | None,
         if research_context:
             log.info(f"Research context: {len(research_context)} chars")
 
-        # Auto-flag research gaps
-        auto_flag_gaps(text, research_context, messages)
+        # Auto-flag research gaps (only for actual research queries)
+        if will_research:
+            auto_flag_gaps(text, research_context, messages)
 
         response_text = call_claude(messages, channel=channel,
                                      research_context=research_context)

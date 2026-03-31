@@ -95,8 +95,9 @@ research/
 | Source | Use for | Coverage |
 |---|---|---|
 | **CourtListener** | Primary — current opinions, docket monitoring, citation chains | Excellent federal appellate; decent district; spotty state |
-| **Harvard CAP** | Historical precedent through 2018 | 6.7M cases, 360 years, published-in-print only |
 | **PACER** | Fallback for dockets not in RECAP | $0.10/page, comprehensive |
+
+**Note:** Harvard CAP (Caselaw Access Project) shut down and migrated its corpus into CourtListener, improving CL's coverage.
 
 **Important:** CL's citation network shows which cases cite which. It does NOT provide treatment status (reversed, distinguished, etc.) like Shepard's or KeyCite. Our "shepardize" tool is forward citation analysis — useful but not a Westlaw/Lexis replacement for definitive treatment.
 

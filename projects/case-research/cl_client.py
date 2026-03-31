@@ -18,9 +18,6 @@ import httpx
 BASE_URL = "https://www.courtlistener.com/api/rest/v4"
 SITE_URL = "https://www.courtlistener.com"
 
-# Harvard CAP (Caselaw Access Project) — free, no token needed
-CAP_BASE = "https://api.case.law/v1"
-
 
 @dataclass
 class Opinion:
@@ -302,103 +299,8 @@ class CourtListenerClient:
         )
 
 
-# ── Harvard CAP (Caselaw Access Project) ──────────────────────────
-
-class HarvardCAPClient:
-    """Client for Harvard Caselaw Access Project API. No token needed."""
-
-    def __init__(self):
-        self.client = httpx.Client(timeout=30.0)
-
-    def search(self, query: str, jurisdiction: Optional[str] = None,
-               decision_date_min: Optional[str] = None,
-               limit: int = 10) -> list[dict]:
-        """Search cases in Harvard CAP."""
-        params = {
-            "search": query,
-            "page_size": min(limit, 100),
-            "ordering": "-relevance",
-            "full_case": "true",
-        }
-        if jurisdiction:
-            params["jurisdiction"] = jurisdiction
-        if decision_date_min:
-            params["decision_date_min"] = decision_date_min
-
-        try:
-            resp = self.client.get(f"{CAP_BASE}/cases/", params=params)
-            resp.raise_for_status()
-            data = resp.json()
-        except Exception:
-            return []
-
-        results = data.get("results", [])
-        out = []
-        for r in results:
-            # Get citations
-            cites = r.get("citations", [])
-            cite_str = cites[0].get("cite", "") if cites else ""
-
-            # Get opinion text
-            casebody = r.get("casebody", {})
-            if isinstance(casebody, dict):
-                text = casebody.get("data", {}).get("opinions", [{}])[0].get("text", "") if isinstance(casebody.get("data"), dict) else ""
-            else:
-                text = ""
-
-            out.append({
-                "id": r.get("id"),
-                "case_name": r.get("name", r.get("name_abbreviation", "")),
-                "citation": cite_str,
-                "court": r.get("court", {}).get("name", "") if isinstance(r.get("court"), dict) else "",
-                "date_filed": r.get("decision_date", ""),
-                "url": r.get("frontend_url", ""),
-                "text": text[:5000] if text else "",
-                "source": "harvard_cap",
-            })
-        return out
-
-    def lookup_citation(self, citation: str) -> Optional[dict]:
-        """Look up a case by citation string."""
-        params = {
-            "cite": citation,
-            "full_case": "true",
-        }
-        try:
-            resp = self.client.get(f"{CAP_BASE}/cases/", params=params)
-            resp.raise_for_status()
-            data = resp.json()
-            results = data.get("results", [])
-            if not results:
-                return None
-
-            r = results[0]
-            cites = r.get("citations", [])
-            cite_str = cites[0].get("cite", "") if cites else citation
-
-            casebody = r.get("casebody", {})
-            text = ""
-            if isinstance(casebody, dict):
-                opinions = casebody.get("data", {}).get("opinions", []) if isinstance(casebody.get("data"), dict) else []
-                if opinions:
-                    text = opinions[0].get("text", "")
-
-            return {
-                "id": r.get("id"),
-                "case_name": r.get("name", r.get("name_abbreviation", "")),
-                "citation": cite_str,
-                "court": r.get("court", {}).get("name", "") if isinstance(r.get("court"), dict) else "",
-                "date_filed": r.get("decision_date", ""),
-                "url": r.get("frontend_url", ""),
-                "text": text,
-                "source": "harvard_cap",
-            }
-        except Exception:
-            return None
-
 
 if __name__ == "__main__":
-    # Test CL
     try:
         cl = CourtListenerClient()
         print("=== CourtListener ===")
@@ -410,11 +312,3 @@ if __name__ == "__main__":
                 print(f"    Text: {text[:200]}..." if text else "    Text: (none)")
     except ValueError as e:
         print(f"CL setup needed: {e}")
-
-    # Test Harvard CAP
-    print("\n=== Harvard CAP ===")
-    cap = HarvardCAPClient()
-    results = cap.search("Arbor Hill attorney fees lodestar", limit=2)
-    for r in results:
-        print(f"  {r['citation']} — {r['case_name']}")
-        print(f"    Text: {r['text'][:200]}..." if r.get("text") else "    Text: (none)")

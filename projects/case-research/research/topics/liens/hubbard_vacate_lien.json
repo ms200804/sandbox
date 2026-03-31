@@ -1,0 +1,121 @@
+{
+  "category": "liens",
+  "topic": "hubbard_vacate_lien",
+  "query": "Extracted from /home/mws/sandbox/incoming/hubbard_vacate_lien_v3.md",
+  "jurisdiction": "",
+  "confidence": "medium",
+  "matters": [],
+  "saved_at": "2026-03-28T12:49:04.612186",
+  "result_count": 15,
+  "results": {
+    "source": "/home/mws/sandbox/incoming/hubbard_vacate_lien_v3.md",
+    "extraction_type": "brief_citation_extraction",
+    "results": [
+      {
+        "case_name": "Gaines v. Dixie Carriers, Inc.",
+        "citation": "434 F.2d 52",
+        "year": "1970",
+        "resolved": false,
+        "context_in_brief": "rest; (2) the Fifth Circuit's limited intervention doctrine under *Gaines v. Dixie Carriers, Inc.*, 434 F.2d 52 (5th Cir. 1970), does not extend to quantum meruit claims; and (3) BF's charging lien already adequately protects w"
+      },
+      {
+        "case_name": "Gomez v. United States",
+        "citation": "490 U.S. 858",
+        "year": "",
+        "resolved": false,
+        "context_in_brief": "ispose of\" any claim or defense within the meaning of \u00a7 636(b)(1)(A). *Cf. Gomez v. United States*, 490 U.S. 858, 871\u201372 (1989) (distinguishing ministerial and case-management functions from dispositive adjudications)"
+      },
+      {
+        "case_name": "Chambers v. NASCO, Inc.",
+        "citation": "501 U.S. 32",
+        "year": "1991",
+        "resolved": false,
+        "context_in_brief": "er to control their dockets and ensure the orderly prosecution of cases. *Chambers v. NASCO, Inc.*, 501 U.S. 32, 43 (1991). This authority encompasses the power to address a charging lien that is preventing a case from pro"
+      },
+      {
+        "case_name": "Villanueva v. CNA Ins. Cos.",
+        "citation": "868 F.2d 684",
+        "year": "",
+        "resolved": false,
+        "context_in_brief": "rity and order the allocation of recovery among competing claimants. *Villanueva v. CNA Ins. Cos.*, 868 F.2d 684, 686\u201387 (5th Cir. 1989); *Speaks v. Trikora Lloyd P.T.*, 838 F.2d 1436, 1440 (5th Cir. 1988).\n\nUnder New"
+      },
+      {
+        "case_name": "Speaks v. Trikora Lloyd P.T.",
+        "citation": "838 F.2d 1436",
+        "year": "1988",
+        "resolved": false,
+        "context_in_brief": "Villanueva v. CNA Ins. Cos.*, 868 F.2d 684, 686\u201387 (5th Cir. 1989); *Speaks v. Trikora Lloyd P.T.*, 838 F.2d 1436, 1440 (5th Cir. 1988).\n\nUnder New York law, which governs the engagement agreement and which this Court has applied (Dkt."
+      },
+      {
+        "case_name": "Schneider, Kleinick, Weitz, Damashek & Shoot v. City of New York",
+        "citation": "302 A.D.2d 183",
+        "year": "",
+        "resolved": false,
+        "context_in_brief": "bject to equitable limitations. *Schneider, Kleinick, Weitz, Damashek & Shoot v. City of New York*, 302 A.D.2d 183, 187\u201388 (1st Dept. 2002) (enforcement of a charging lien is \"founded upon the equitable notion that the"
+      },
+      {
+        "case_name": "Rosenman & Colin v. Richard",
+        "citation": "850 F.2d 57",
+        "year": "1988",
+        "resolved": false,
+        "context_in_brief": "the court will see that no injustice is done to its own officers\"); *Rosenman & Colin v. Richard*, 850 F.2d 57, 60 (2d Cir. 1988). The priority of a \u00a7 475 lien is not absolute; it \"depend[s] on the equities\" and is \"limited to ou"
+      },
+      {
+        "case_name": "Banque Indosuez v. Sopwith Holdings Corp.",
+        "citation": "98 N.Y.2d 34",
+        "year": "",
+        "resolved": false,
+        "context_in_brief": "re 'proceeds' have been obtained in a client's favor.\" *Banque Indosuez v. Sopwith Holdings Corp.*, 98 N.Y.2d 34, 43\u201344 (2002). An attorney discharged from a contingency fee engagement\u2014even without cause\u2014is limited t"
+      },
+      {
+        "case_name": "Unknown",
+        "citation": "83 N.Y.2d 465",
+        "year": "1994",
+        "resolved": false,
+        "context_in_brief": "om a contingency fee engagement\u2014even without cause\u2014is limited to quantum meruit. *In re Cooperman*, 83 N.Y.2d 465, 473 (1994). An attorney terminated for cause forfeits all right to compensation. *Lansky v. Easow*, 304 A.D.2d"
+      },
+      {
+        "case_name": "Lansky v. Easow",
+        "citation": "304 A.D.2d 533",
+        "year": "2003",
+        "resolved": false,
+        "context_in_brief": "473 (1994). An attorney terminated for cause forfeits all right to compensation. *Lansky v. Easow*, 304 A.D.2d 533 (2d Dept. 2003); *Shalom Toy v. NYPIUA*, 239 A.D.2d 196, 198 (1st Dept. 1997).\n\nBF itself invoked New York Judiciar"
+      },
+      {
+        "case_name": "Shalom Toy v. NYPIUA",
+        "citation": "239 A.D.2d 196",
+        "year": "1997",
+        "resolved": false,
+        "context_in_brief": "l right to compensation. *Lansky v. Easow*, 304 A.D.2d 533 (2d Dept. 2003); *Shalom Toy v. NYPIUA*, 239 A.D.2d 196, 198 (1st Dept. 1997).\n\nBF itself invoked New York Judiciary Law \u00a7 475-a in its Notice of Charging Lien (Dkt. 284). Havin"
+      },
+      {
+        "case_name": "New Hampshire v. Maine",
+        "citation": "532 U.S. 742",
+        "year": "",
+        "resolved": false,
+        "context_in_brief": "ations that New York law imposes on a discharged attorney's recovery. *See New Hampshire v. Maine*, 532 U.S. 742, 749\u201350 (2001) (judicial estoppel prevents a party from asserting a position inconsistent with one succe"
+      },
+      {
+        "case_name": "Butler, Fitzgerald & Potter v. Sequa Corp.",
+        "citation": "250 F.3d 171",
+        "year": "2001",
+        "resolved": false,
+        "context_in_brief": "he client's interests to that of its former counsel.\" *Butler, Fitzgerald & Potter v. Sequa Corp.*, 250 F.3d 171, 179 (2d Cir. 2001). New York's highest court has confirmed that \u00a7 475 lien priority \"depend[s] on the equities\" and th"
+      },
+      {
+        "case_name": "Fischer-Hansen v. Brooklyn Heights R.R.",
+        "citation": "173 N.Y. 492",
+        "year": "1903",
+        "resolved": false,
+        "context_in_brief": "duct or neglect.\" *Schneider*, 302 A.D.2d at 188 (citing *Fischer-Hansen v. Brooklyn Heights R.R.*, 173 N.Y. 492, 502 (1903)).\n\nThe Court's inherent authority to manage its docket and ensure the orderly prosecution of cases"
+      },
+      {
+        "case_name": "Matter of Lai Ling Cheng v. Modansky Leasing Co.",
+        "citation": "73 N.Y.2d 454",
+        "year": "1989",
+        "resolved": false,
+        "context_in_brief": "value of services rendered in quantum meruit\"); *Matter of Lai Ling Cheng v. Modansky Leasing Co.*, 73 N.Y.2d 454 (1989) (establishing the quantum meruit rule for discharged contingency-fee attorneys). The Court applied"
+      }
+    ]
+  }
+}
