@@ -108,14 +108,20 @@ LEGAL_PHRASES = [
     # Liens
     "charging lien", "retaining lien", "attorney lien", "attorney's lien",
     "lien priority", "lien subordination", "lien enforcement",
+    "lien modification", "lien vacatur", "equitable lien",
     # Fees
     "quantum meruit", "contingency fee", "fee agreement", "fee dispute",
     "fee shifting", "reasonable value", "attorneys' fees", "attorney's fees",
+    "fee petition", "fee award",
     # Motions
     "motion to vacate", "motion to modify", "motion to compel",
-    "motion to dismiss", "summary judgment",
+    "motion to dismiss", "summary judgment", "motion for reconsideration",
     # Authority / Power
     "inherent authority", "inherent power", "docket management",
+    "case management", "docket control", "supervisory authority",
+    # Magistrate / Referral
+    "magistrate judge", "pretrial matter", "non-dispositive",
+    "dispositive motion", "de novo review",
     # Estoppel / Preclusion
     "judicial estoppel", "equitable estoppel", "collateral estoppel",
     "res judicata", "stare decisis",
@@ -125,17 +131,23 @@ LEGAL_PHRASES = [
     # Attorney status
     "discharged attorney", "terminated attorney", "former attorney",
     "pro hac vice", "for cause", "good cause", "without cause",
+    "substitution of counsel", "withdrawal of counsel",
     # Bankruptcy
-    "bankruptcy estate", "automatic stay",
+    "bankruptcy estate", "automatic stay", "chapter 7",
+    "bankruptcy trustee", "abandoned property",
     # Injunctions
     "preliminary injunction", "temporary restraining",
     # Jurisdiction
     "personal jurisdiction", "subject matter jurisdiction",
     "forum non conveniens",
+    # Discovery
+    "discovery dispute", "protective order", "work product",
+    "attorney-client privilege",
     # Other
     "class action", "class certification",
     "statute of limitations",
     "sex trafficking", "trafficking victims",
+    "litigation funding", "litigation funder",
 ]
 
 STOPWORDS = {"the", "a", "an", "of", "in", "for", "to", "and", "or", "on",
@@ -329,7 +341,13 @@ def deduplicate_results(results: list[dict]) -> list[dict]:
 def score_relevance(result: dict, phrases: list[str], terms: list[str]) -> float:
     """
     Score a search result for relevance before fetching full text.
-    Uses case name and snippet. Returns 0.0 - 1.0.
+    Uses case name, snippet, and cite count. Returns 0.0 - 1.0.
+
+    Weighting:
+      - Phrase match in snippet/name: 3 pts each (strongest signal)
+      - Term match in snippet/name: 1 pt each
+      - Cite count: up to 4 pts (a 140-cite case is almost certainly more
+        useful than a 0-cite case — this was too low before)
     """
     text = (
         (result.get("case_name", "") + " " + result.get("snippet", ""))
@@ -351,16 +369,19 @@ def score_relevance(result: dict, phrases: list[str], terms: list[str]) -> float
         if term.lower() in text:
             score += 1.0
 
-    # Bonus for high cite count (well-cited = likely important)
+    # Cite count — weighted heavily. A well-cited opinion is almost always
+    # more authoritative and useful than an uncited one.
     cite_count = result.get("cite_count", 0) or 0
-    if cite_count > 100:
+    max_score += 4.0
+    if cite_count >= 100:
+        score += 4.0
+    elif cite_count >= 50:
+        score += 3.0
+    elif cite_count >= 20:
+        score += 2.0
+    elif cite_count >= 5:
         score += 1.0
-        max_score += 1.0
-    elif cite_count > 20:
-        score += 0.5
-        max_score += 1.0
-    else:
-        max_score += 1.0
+    # 0-4 cites = 0 points
 
     if max_score == 0:
         return 0.0
@@ -768,39 +789,60 @@ def _generate_adverse_queries(decomposed: dict) -> list[str]:
 
 
 def _extract_holding_and_quotes(text: str, query: str) -> tuple[str, list[dict]]:
-    """Extract a holding statement and key quotes from opinion text."""
+    """
+    Extract a holding statement and key quotes from opinion text.
+
+    Scans up to 50k chars (expanded from 15k) because holdings often appear
+    deep in the opinion (after facts, procedural history, analysis).
+    """
     if not text:
         return "Full text not available in CourtListener", []
 
-    text_sample = text[:15000]
+    # Scan more text — holdings often appear in the back half of the opinion
+    text_sample = text[:50000]
     sentences = [s.strip() for s in text_sample.replace('\n', ' ').split('.') if s.strip()]
 
-    holding_signals = ["we hold", "we conclude", "the court holds", "we therefore hold",
-                       "it is ordered", "we find that", "we affirm", "we reverse",
-                       "the court finds", "we grant", "we deny"]
+    holding_signals = [
+        "we hold", "we conclude", "the court holds", "we therefore hold",
+        "it is ordered", "we find that", "we affirm", "we reverse",
+        "the court finds", "we grant", "we deny",
+        "we vacate", "we remand", "judgment is",
+    ]
+
+    # First pass: look for strong holding language
     holding = ""
     for sent in sentences:
         sent_lower = sent.lower()
         if any(signal in sent_lower for signal in holding_signals):
-            holding = sent.strip() + "."
-            break
+            # Prefer holdings that are substantive (>60 chars), not just "We affirm"
+            if len(sent.strip()) > 60:
+                holding = sent.strip() + "."
+                break
+            elif not holding:
+                holding = sent.strip() + "."
+                # Don't break — keep looking for a meatier holding
 
     if not holding and sentences:
         holding = "(Holding not auto-extracted — review full text)"
 
+    # Key quotes: find sentences with high query-term density
     query_terms = [t.lower() for t in query.split() if len(t) > 3]
     key_quotes = []
+    scored_sents = []
     for sent in sentences:
         sent_lower = sent.lower()
         relevance = sum(1 for term in query_terms if term in sent_lower)
         if relevance >= 2 and len(sent) > 40:
-            key_quotes.append({
-                "text": sent.strip() + ".",
-                "pinpoint": "",
-                "context": f"Contains {relevance} query terms",
-            })
-        if len(key_quotes) >= 3:
-            break
+            scored_sents.append((relevance, sent))
+
+    # Sort by relevance and take top 3
+    scored_sents.sort(key=lambda x: -x[0])
+    for relevance, sent in scored_sents[:3]:
+        key_quotes.append({
+            "text": sent.strip()[:300] + ".",
+            "pinpoint": "",
+            "context": f"Contains {relevance} query terms",
+        })
 
     return holding, key_quotes
 
