@@ -784,7 +784,7 @@ def trello_promote_due_today():
             continue
         # Due date matches today and card isn't already in Today
         if due[:10] <= today and c["idList"] != TRELLO_LIST_TODAY:
-            result = trello_put(f"/cards/{c['id']}", {"idList": TRELLO_LIST_TODAY})
+            result = trello_put(f"/cards/{c['id']}", {"idList": TRELLO_LIST_TODAY, "due": "null"})
             if result:
                 promoted.append(c["name"])
                 log.info(f"Trello: promoted '{c['name']}' to Today (due {due[:10]})")
