@@ -29,6 +29,7 @@ import threading
 from datetime import datetime
 from pathlib import Path
 
+import httpx
 from dotenv import load_dotenv
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
@@ -719,6 +720,110 @@ def make_task_callback(channel):
     return callback
 
 
+# ── Trello Integration ─────────────────────────────────────────────
+
+TRELLO_API_KEY = os.environ.get("TRELLO_API_KEY")
+TRELLO_TOKEN = os.environ.get("TRELLO_TOKEN")
+TRELLO_BOARD_ID = os.environ.get("TRELLO_BOARD_ID", "69cc688be037310327667392")
+
+# List IDs for the Main board
+TRELLO_LIST_TODAY = os.environ.get("TRELLO_LIST_TODAY", "69cc68a319ec4695c1ebe02a")
+TRELLO_LIST_THIS_WEEK = os.environ.get("TRELLO_LIST_THIS_WEEK", "69cc68a3646dbcd2b04e8631")
+TRELLO_LIST_SOON = os.environ.get("TRELLO_LIST_SOON", "69cc68a271d6ae1623e0b28b")
+TRELLO_LIST_WAITING = os.environ.get("TRELLO_LIST_WAITING", "69cc68a2c0c717c6b1169d94")
+TRELLO_LIST_BILLING = os.environ.get("TRELLO_LIST_BILLING", "69cc68a2ba84950c85ab8990")
+
+
+def trello_get(path, params=None):
+    """GET request to Trello API."""
+    if not TRELLO_API_KEY or not TRELLO_TOKEN:
+        return None
+    p = {"key": TRELLO_API_KEY, "token": TRELLO_TOKEN}
+    if params:
+        p.update(params)
+    try:
+        resp = httpx.get(f"https://api.trello.com/1{path}", params=p, timeout=10)
+        if resp.status_code == 200:
+            return resp.json()
+        log.warning(f"Trello API {resp.status_code}: {resp.text[:200]}")
+    except Exception as e:
+        log.warning(f"Trello API error: {e}")
+    return None
+
+
+def trello_put(path, params=None):
+    """PUT request to Trello API."""
+    if not TRELLO_API_KEY or not TRELLO_TOKEN:
+        return None
+    p = {"key": TRELLO_API_KEY, "token": TRELLO_TOKEN}
+    if params:
+        p.update(params)
+    try:
+        resp = httpx.put(f"https://api.trello.com/1{path}", params=p, timeout=10)
+        if resp.status_code == 200:
+            return resp.json()
+        log.warning(f"Trello PUT {resp.status_code}: {resp.text[:200]}")
+    except Exception as e:
+        log.warning(f"Trello PUT error: {e}")
+    return None
+
+
+def trello_promote_due_today():
+    """Move cards with today's due date to the Today list."""
+    cards = trello_get(f"/boards/{TRELLO_BOARD_ID}/cards",
+                       {"fields": "name,due,idList,closed"})
+    if not cards:
+        return []
+    today = datetime.now().strftime("%Y-%m-%d")
+    promoted = []
+    for c in cards:
+        if c.get("closed"):
+            continue
+        due = c.get("due")
+        if not due:
+            continue
+        # Due date matches today and card isn't already in Today
+        if due[:10] <= today and c["idList"] != TRELLO_LIST_TODAY:
+            result = trello_put(f"/cards/{c['id']}", {"idList": TRELLO_LIST_TODAY})
+            if result:
+                promoted.append(c["name"])
+                log.info(f"Trello: promoted '{c['name']}' to Today (due {due[:10]})")
+    return promoted
+
+
+def trello_board_summary():
+    """Build a Slack-formatted summary of the Trello board."""
+    lists = trello_get(f"/boards/{TRELLO_BOARD_ID}/lists", {"fields": "name,closed"})
+    cards = trello_get(f"/boards/{TRELLO_BOARD_ID}/cards",
+                       {"fields": "name,due,labels,idList,closed"})
+    if not lists or not cards:
+        return None
+
+    list_names = {l["id"]: l["name"] for l in lists if not l.get("closed")}
+    # Order: Today, This Week, Soon, Waiting On, Billing & Admin
+    list_order = [TRELLO_LIST_TODAY, TRELLO_LIST_THIS_WEEK, TRELLO_LIST_SOON,
+                  TRELLO_LIST_WAITING, TRELLO_LIST_BILLING]
+
+    open_cards = [c for c in cards if not c.get("closed")]
+    by_list = {}
+    for c in open_cards:
+        lid = c["idList"]
+        by_list.setdefault(lid, []).append(c)
+
+    lines = []
+    for lid in list_order:
+        if lid not in list_names or lid not in by_list:
+            continue
+        lines.append(f"*{list_names[lid]}:*")
+        for c in by_list[lid]:
+            due = c.get("due")
+            due_str = f" _(due {due[:10]})_" if due else ""
+            labels = ", ".join(l["name"] for l in c.get("labels", []) if l.get("name"))
+            label_str = f" [{labels}]" if labels else ""
+            lines.append(f"  • {c['name']}{due_str}{label_str}")
+    return "\n".join(lines) if lines else None
+
+
 # ── Morning Digest ──────────────────────────────────────────────────
 
 def run_digest():
@@ -730,21 +835,32 @@ def run_digest():
     running = [t for t in recent if t["status"] == "running"]
 
     lines = [f"*Morning Digest — {datetime.now().strftime('%A, %B %-d')}*\n"]
-    if not recent:
-        lines.append("No tasks ran in the last 24 hours. Quiet night.")
-    else:
+
+    # Trello: promote due-today cards, then show board summary
+    promoted = trello_promote_due_today()
+    if promoted:
+        lines.append(f"*Moved to Today ({len(promoted)}):*")
+        for name in promoted:
+            lines.append(f"  → {name}")
+        lines.append("")
+
+    board = trello_board_summary()
+    if board:
+        lines.append(board)
+        lines.append("")
+
+    # Background tasks (if any)
+    if recent:
+        lines.append("*Background Tasks:*")
         if running:
-            lines.append(f"*Running ({len(running)}):*")
             for t in running:
-                lines.append(f"  • `{t['name']}` (started {t['started_at'][:16]})")
+                lines.append(f"  • `{t['name']}` running (started {t['started_at'][:16]})")
         if completed:
-            lines.append(f"*Completed ({len(completed)}):*")
             for t in completed:
-                lines.append(f"  • `{t['name']}`")
+                lines.append(f"  • `{t['name']}` ✓")
         if failed:
-            lines.append(f"*Failed ({len(failed)}):*")
             for t in failed:
-                lines.append(f"  • `{t['name']}` — check logs")
+                lines.append(f"  • `{t['name']}` ✗ — check logs")
 
     post_to_channel(CHANNEL_STATUS, "\n".join(lines))
     log.info("Morning digest posted")
